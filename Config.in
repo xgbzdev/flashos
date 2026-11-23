@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_FLASHOS_PATH/package/flashos-tools/Config.in"

@@ -1,0 +1,74 @@
+name: Build FlashOS ISO
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (Buildroot needs ~15 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git curl wget cpio unzip rsync bc file \
+            python3 libncurses-dev libelf-dev syslinux-utils
+
+      - name: Cache Buildroot downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildroot-dl
+            dl-flashos
+          key: br-dl-${{ hashFiles('configs/flashos_defconfig') }}
+          restore-keys: br-dl-
+
+      - name: Build FlashOS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.buildroot-dl
+          export BR2_DL_DIR=$HOME/.buildroot-dl
+          ./build.sh
+
+      - name: Rename image
+        run: |
+          mkdir -p dist
+          cp output/images/rootfs.iso9660 dist/FlashOS.iso
+          ls -lh dist
+
+      - name: Upload ISO (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlashOS-iso
+          path: dist/FlashOS.iso
+
+      - name: Publish to the "latest" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/FlashOS.iso \
+            --title "FlashOS (latest build)" \
+            --notes "Bootable FlashOS ISO built from ${GITHUB_SHA::7}. Boot it in QEMU/VirtualBox or write it to a USB stick." \
+            --latest
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildroot-config
+          path: output/.config

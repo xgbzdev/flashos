@@ -1,0 +1,19 @@
+# FlashOS inittab (BusyBox init)
+::sysinit:/bin/mount -t proc proc /proc
+::sysinit:/bin/mount -o remount,rw /
+::sysinit:/bin/mkdir -p /dev/pts /dev/shm /run /tmp/.X11-unix
+::sysinit:/bin/mount -a
+::sysinit:/bin/hostname -F /etc/hostname
+::sysinit:/bin/dmesg -n 1
+::sysinit:/etc/init.d/rcS
+
+# The FlashOS shell is the only thing the user ever sees.
+tty1::respawn:/usr/bin/flashsh
+
+# Uncomment for a debug root shell on Alt+F3:
+#tty3::respawn:/bin/sh
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/etc/init.d/rcK
+::shutdown:/sbin/swapoff -a
+::shutdown:/bin/umount -a -r

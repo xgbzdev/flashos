@@ -1,0 +1,13 @@
+#!/bin/sh
+# FlashOS startup: mount USB drives so SWF files are ready at the prompt.
+case "$1" in
+    start)
+        mkdir -p /media /run/flashos
+        sleep 1   # give USB storage a moment to enumerate
+        /usr/bin/flash-mount
+        ;;
+    stop)
+        umount /media/* 2>/dev/null
+        ;;
+esac
+exit 0
