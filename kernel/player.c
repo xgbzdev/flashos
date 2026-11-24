@@ -1357,13 +1357,21 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         plat_mouse_set(scr_w / 2, scr_h / 2);
         video_fill(0, 0, scr_w, scr_h, 0xFF000000u);
         video_present(0, 0, scr_w, scr_h);
-        int first = 1;
+        int first = 1, skipped = 0;
         while (!quit_requested) {
             u32 t0 = plat_ms();
             handle_input();
             if (quit_requested) break;
             if (!first) advance_all();
             first = 0;
+            /* streamed music falling behind (slow PC): advance the movie
+             * without drawing it, like Flash's frame dropping */
+            audio_pump();
+            if (stream_fmt >= 0 && audio_stream_queued() < (u32)audio_rate() / 4 && skipped < 8) {
+                skipped++;
+                continue;
+            }
+            skipped = 0;
             video_fill(vx, vy, vw, vh, bg_color);
             render_node(root, base, CX_ID);
             erase_cursor();
