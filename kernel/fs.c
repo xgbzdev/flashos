@@ -12,17 +12,17 @@ static u32 rd32(const u8 *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)
 static int count_of(const u8 *a) { return a ? (int)rd32(a + 4) : 0; }
 
 /* Files downloaded with GET live at the top of RAM. */
-typedef struct { char name[56]; const u8 *data; u32 size; } dlfile;
+typedef struct { char name[56]; const u8 *data; u32 size; int tag; } dlfile;
 static dlfile dl[32];
 static int ndl;
 u32 net_reserved;
 
-int fs_add_download(const char *name, const u8 *data, u32 len) {
+int fs_add_file(const char *name, const u8 *data, u32 len, int tag) {
     u32 size;
     u8 *base = plat_heap2(&size);
     if (!base || len + (8u << 20) > size) return 0;
     int slot = -1;
-    for (int i = 0; i < ndl; i++) if (!kstricmp(dl[i].name, name)) slot = i;
+    for (int i = 0; i < ndl; i++) if (!kstricmp(dl[i].name, name) && dl[i].tag == tag) slot = i;
     if (slot < 0) { if (ndl >= 32) return 0; slot = ndl++; }
     u8 *dst = (u8 *)(((u32)(base + size) - len) & ~15u);
     memmove(dst, data, len);
@@ -30,7 +30,16 @@ int fs_add_download(const char *name, const u8 *data, u32 len) {
     kstrcpy(dl[slot].name, name, 56);
     dl[slot].data = dst;
     dl[slot].size = len;
+    dl[slot].tag = tag;
     return 1;
+}
+int fs_add_download(const char *name, const u8 *data, u32 len) { return fs_add_file(name, data, len, 2); }
+
+/* forget the files with a tag (their memory is only reclaimed at reboot) */
+void fs_drop_tag(int tag) {
+    int j = 0;
+    for (int i = 0; i < ndl; i++) if (dl[i].tag != tag) dl[j++] = dl[i];
+    ndl = j;
 }
 
 /* Built-in files first, then USB sticks / extra disks, then downloads. */
@@ -45,7 +54,7 @@ int fs_get(int i, kfile *f) {
         f->name = d->name;
         f->data = d->data;
         f->size = d->size;
-        f->usb = 2;
+        f->usb = d->tag;
         return 1;
     }
     if (i >= nb) { i -= nb; a = u; usb = 1; }

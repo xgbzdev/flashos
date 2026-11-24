@@ -26,6 +26,8 @@ elif mode == "install":   # CD + blank IDE disk + FAT USB stick
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-cdrom", iso, "-boot", "d",
              "-device", "qemu-xhci,id=xhci", "-drive", f"if=none,id=stick,format=raw,file={extra[1]}",
              "-device", "usb-storage,bus=xhci.0,drive=stick"]
+elif mode == "gamecd":   # boot CD + a second, data-only ISO with games
+    media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3", "-boot", "d"]
 elif mode in ("net", "net8139"):
     model = "e1000" if mode == "net" else "rtl8139"
     media = ["-cdrom", iso, "-boot", "d", "-nic", f"user,model={model}"]
@@ -71,6 +73,18 @@ def type_text(t):
     for ch in t:
         cmd("sendkey " + KEYS.get(ch, ch))
 
+
+if mode == "gamecd":
+    time.sleep(10)
+    type_text("ls\n")
+    time.sleep(1.5)
+    shot("01_ls")
+    type_text("cd game.swf\n")
+    time.sleep(4)
+    shot("02_play")
+    cmd("quit")
+    qemu.wait(timeout=10)
+    sys.exit(0)
 
 if mode in ("net", "net8139"):
     time.sleep(9)

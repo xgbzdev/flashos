@@ -82,6 +82,7 @@ static void cmd_help(void) {
              "  ABOUT            about FlashOS\n"
              "  MEM              show installed RAM\n"
              "  INSTALL          install FlashOS on the hard disk\n"
+             "  RESCAN           read game CDs / ISO images again\n"
              "  NET              connect to the network (cable) and show status\n"
              "  PING <host>      test the connection\n"
              "  GET <http://url> download a SWF file from the internet\n"
@@ -109,7 +110,7 @@ static void cmd_ls(void) {
         con_puts(kb);
         con_puts(" KB  ");
         con_puts(ends_swf(f.name) && is_swf_data(&f) ? "SWF" : "---");
-        con_puts(f.usb == 1 ? "  USB\n" : f.usb == 2 ? "  NET\n" : "\n");
+        con_puts(f.usb == 1 ? "  USB\n" : f.usb == 2 ? "  NET\n" : f.usb == 3 ? "  CD\n" : "\n");
     }
 }
 
@@ -393,6 +394,13 @@ static void handle(char *line) {
     else if (!kstricmp(line, "install")) cmd_install();
     else if (!kstricmp(line, "usbdiag")) cmd_usbdiag();
     else if (!kstricmp(line, "net")) cmd_net();
+    else if (!kstricmp(line, "rescan")) {
+        con_puts("\n Reading CD drives...");
+        int n = cd_scan();
+        con_puts("\r ");
+        put_num((u32)n);
+        con_puts(" SWF file(s) found on CDs / ISO images. Type LS.\n");
+    }
     else if (!kstricmp(line, "ping")) cmd_ping(arg);
     else if (!kstricmp(line, "get") || !kstricmp(line, "download")) cmd_get(arg);
     else if (!kstricmp(line, "reboot")) { con_puts("\n Rebooting...\n"); plat_sleep(400); plat_reboot(); }
@@ -471,6 +479,7 @@ void kmain(void) {
     plat_init();
     video_init();
     render_init();
+    cd_scan(); /* game CDs / ISO images in the CD drives */
     con_init();
     boot_animation();
 

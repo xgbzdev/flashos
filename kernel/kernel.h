@@ -111,6 +111,11 @@ typedef struct { int base, ctrl, slave; u32 sectors; char model[41]; } ata_disk;
 int ata_scan(ata_disk *out, int max);
 int ata_write(ata_disk *d, u32 lba, const u8 *buf, u32 count);
 int ata_read(ata_disk *d, u32 lba, u8 *buf, u32 count);
+int atapi_scan(ata_disk *out, int max);
+int atapi_read(ata_disk *d, u32 lba, u8 *buf, u32 count);
+
+/* ---- cdfs.c (SWF files on game CDs / ISO images) ---- */
+int cd_scan(void);                   /* returns number of SWF files found */
 
 /* ---- net.c (wired network) ---- */
 int net_init(void);                  /* 1 ok, -1 no card, -2 no cable, -3 no DHCP */
@@ -119,6 +124,8 @@ int net_ping(const char *host, u32 *ms, char *err);
 int net_get(const char *url, u8 **data, u32 *len, int *status, char *err);
 extern u32 net_reserved;             /* bytes at the top of RAM used by downloads */
 int fs_add_download(const char *name, const u8 *data, u32 len);
+int fs_add_file(const char *name, const u8 *data, u32 len, int tag); /* tag 2 NET, 3 CD */
+void fs_drop_tag(int tag);
 
 /* ---- inflate.c ---- */
 int inflate_raw(const u8 *src, u32 srclen, u8 *dst, u32 dstlen, u32 *outlen);
