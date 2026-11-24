@@ -69,6 +69,33 @@ main:
     rep movsw
     pop ds
 
+    ; --- memory size (E801) -> BOOTINFO+16 = top of RAM ---
+    mov dword [BOOTINFO + 16], 0
+    mov ax, 0xE801
+    xor bx, bx
+    xor cx, cx
+    xor dx, dx
+    int 0x15
+    jc .memdone
+    test ax, ax
+    jnz .memok
+    mov ax, cx
+    mov bx, dx
+.memok:
+    test bx, bx
+    jz .memlow
+    movzx eax, bx
+    shl eax, 16
+    add eax, 0x01000000
+    jmp .memstore
+.memlow:
+    movzx eax, ax
+    shl eax, 10
+    add eax, 0x00100000
+.memstore:
+    mov [BOOTINFO + 16], eax
+.memdone:
+
     ; --- sectors per 32 KB chunk ---
     xor dx, dx
     mov ax, 0x8000

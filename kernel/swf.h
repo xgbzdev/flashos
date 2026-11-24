@@ -1,0 +1,223 @@
+/* FlashKernel SWF player - shared definitions.
+ * Copyright (c) 2026 FlashOS. All rights reserved.
+ */
+#ifndef FLASH_SWF_H
+#define FLASH_SWF_H
+#include "kernel.h"
+
+typedef double num;
+typedef struct { float a, b, c, d, tx, ty; } mat;
+typedef struct { float rm, gm, bm, am, ra, ga, ba, aa; } cxf;
+extern const mat MAT_ID;
+extern const cxf CX_ID;
+
+typedef struct obj obj;
+typedef struct inst inst;
+
+
+/* ---------------- SWF bit reader ---------------- */
+typedef struct { const u8 *d; u32 n, i, bb; int bn; } rd;
+static inline void rinit(rd *r, const u8 *d, u32 n) { r->d = d; r->n = n; r->i = 0; r->bn = 0; r->bb = 0; }
+static inline u32 r8(rd *r) { r->bn = 0; return r->i < r->n ? r->d[r->i++] : 0; }
+static inline u32 r16(rd *r) { u32 a = r8(r); return a | (r8(r) << 8); }
+static inline u32 r32(rd *r) { u32 a = r16(r); return a | (r16(r) << 16); }
+static inline void ralign(rd *r) { r->bn = 0; }
+static inline u32 rub(rd *r, int n) {
+    u32 v = 0;
+    while (n-- > 0) {
+        if (!r->bn) { r->bb = r->i < r->n ? r->d[r->i++] : 0; r->bn = 8; }
+        r->bn--;
+        v = (v << 1) | ((r->bb >> r->bn) & 1);
+    }
+    return v;
+}
+static inline s32 rsb(rd *r, int n) {
+    if (n <= 0) return 0;
+    u32 v = rub(r, n);
+    if (n < 32 && (v & (1u << (n - 1)))) v |= ~0u << n;
+    return (s32)v;
+}
+static inline const char *rstr(rd *r) {
+    const char *s = (const char *)r->d + r->i;
+    while (r->i < r->n && r->d[r->i]) r->i++;
+    if (r->i < r->n) r->i++;
+    return s;
+}
+void rrect(rd *r, s32 *q);
+mat rmat(rd *r);
+cxf rcx(rd *r, int alpha);
+u32 rrgb(rd *r);
+u32 rrgba(rd *r);
+
+/* ---------------- ActionScript values ---------------- */
+enum { V_UNDEF, V_NULL, V_BOOL, V_NUM, V_STR, V_OBJ };
+typedef struct { u8 t; union { num n; int b; const char *s; obj *o; } u; } val;
+
+/* ---------------- characters ---------------- */
+typedef struct { u8 type, ng, spread; u32 color; mat m; u8 ratio[16]; u32 gcol[16]; u16 bmp; } fstyle;
+typedef struct { float w; u32 color; } lstyle;
+typedef struct { float x0, y0, x1, y1; u16 f0, f1, ln; } edge;
+typedef struct {
+    int nfill, nline, nedge, nonzero;
+    fstyle *fills;
+    lstyle *lines;
+    edge *edges;
+    u32 *fofs, *fidx, *lofs, *lidx;
+    s32 bounds[4]; /* twips: xmin xmax ymin ymax */
+    int cap_e, cap_f, cap_l;
+} shape;
+
+typedef struct {
+    const u8 *tags;
+    u32 len;
+    u16 nframes;
+    int nlabels;
+    const char **lname;
+    u16 *lframe;
+} timeline;
+
+typedef struct { int w, h; u32 *px; } bitmap;
+
+typedef struct { u8 states; u16 id; s16 depth; mat m; cxf cx; } btnrec;
+typedef struct { u16 cond; const u8 *code; u32 len; } btnact;
+typedef struct { int nrec, nact; btnrec *rec; btnact *act; } button_def;
+
+typedef struct { int nglyph; shape **glyph; u16 *code; float em; } font_def;
+typedef struct { u16 font; u32 color; float x, y, height; int n; u16 *glyph; float *adv; } textrun;
+typedef struct { s32 bounds[4]; mat m; int nrun; textrun *run; } text_def;
+typedef struct {
+    s32 bounds[4];
+    u16 flags, font;
+    float height;
+    u32 color;
+    int align;
+    const char *var, *init;
+} etext_def;
+
+enum { CH_NONE, CH_SHAPE, CH_SPRITE, CH_BITMAP, CH_BUTTON, CH_FONT, CH_TEXT, CH_ETEXT };
+typedef struct { u8 type; void *p; const char *export_name; obj *klass; } chr;
+extern chr *chars;
+
+/* ---------------- display objects ---------------- */
+enum { K_SHAPE, K_SPRITE, K_BUTTON, K_TEXT, K_ETEXT };
+typedef struct { u32 flags; u8 key; const u8 *code; u32 len; } clipaction;
+
+typedef struct {
+    int nf, nl, ne, cap;
+    fstyle *fills;
+    lstyle *lines;
+    edge *edges;
+    u16 cur_fill, cur_line;
+    float x, y, sx, sy;
+    shape *built;
+    int dirty;
+} dyndraw;
+
+struct inst {
+    u8 kind, visible, playing, fresh, dynamic, enabled, hand, dead;
+    u8 btn_state, as_moved;
+    u16 id;
+    int depth, seq;
+    u16 clipdepth, ratio;
+    mat m;
+    cxf cx;
+    const char *name;
+    inst *parent;
+    obj *o;
+    timeline *tl;
+    u32 pos;
+    int frame;
+    int n, cap;
+    inst **kids;
+    int nca;
+    clipaction *ca;
+    char *text;      /* edit text contents */
+    etext_def *et;
+    dyndraw *dyn;
+    inst **btn_kids; /* sprite instances inside a button */
+};
+
+/* ---------------- player API used by the ActionScript engine ---------------- */
+extern inst *root;
+extern int swf_ver;
+extern int stage_w, stage_h; /* pixels */
+extern int mouse_visible, mouse_stage_x, mouse_stage_y;
+extern int quit_requested;
+extern int last_key_code, last_key_ascii;
+
+void *amalloc(u32 n);
+char *astrdup(const char *s);
+char *astrndup(const char *s, u32 n);
+
+inst *inst_create(inst *parent, u16 id, int depth, const char *name, int dynamic);
+void inst_remove(inst *in);
+inst *inst_child(inst *p, const char *name);
+inst *inst_at_depth(inst *p, int depth);
+void inst_goto(inst *in, int frame, int play);
+int inst_label(inst *in, const char *label);
+mat inst_world(inst *in);   /* local -> stage twips */
+void inst_bounds(inst *in, int world, float *x0, float *y0, float *x1, float *y1);
+int inst_hit_point(inst *in, float sx, float sy); /* stage twips */
+void inst_swap_depth(inst *in, int depth);
+inst *inst_duplicate(inst *src, const char *name, int depth);
+int inst_next_depth(inst *p);
+void inst_set_text(inst *in, const char *s);
+void start_drag(inst *in, int lock, int constrain, float x0, float y0, float x1, float y1);
+void stop_drag(void);
+void shape_from_dyn(dyndraw *d);
+dyndraw *dyn_get(inst *in);
+shape *parse_dyn_shape(dyndraw *d);
+
+/* ---------------- ActionScript engine (avm1.c) ---------------- */
+void as_init(void);
+obj *as_clip_obj(inst *in);
+void as_clip_dead(inst *in);
+void as_run(const u8 *code, u32 len, inst *target);
+void as_queue(const u8 *code, u32 len, inst *target);
+void as_queue_init_class(inst *in);
+void as_flush_queue(void);
+int as_has_handler(inst *in, const char *name);
+void as_call_handler(inst *in, const char *name, val *args, int n);
+void as_listeners(const char *which, const char *event); /* "Key" / "Mouse" */
+void as_intervals(void);
+void as_clip_constructed(inst *in);
+val as_get_var_path(inst *base, const char *path);
+const char *as_tostring(val v);
+void as_text_sync(inst *in);
+
+static inline val vnum(num n) { val v; v.t = V_NUM; v.u.n = n; return v; }
+static inline val vbool(int b) { val v; v.t = V_BOOL; v.u.b = b ? 1 : 0; return v; }
+static inline val vstr(const char *s) { val v; v.t = V_STR; v.u.s = s; return v; }
+static inline val vobj(obj *o) { val v; if (o) { v.t = V_OBJ; v.u.o = o; } else v.t = V_NULL; return v; }
+static inline val vundef(void) { val v; v.t = V_UNDEF; return v; }
+
+/* math (x87) */
+num m_floor(num x);
+num m_sin(num x);
+num m_cos(num x);
+num m_atan2(num y, num x);
+num m_sqrt(num x);
+num m_log(num x);
+num m_exp(num x);
+num m_pow(num a, num b);
+num m_fmod(num a, num b);
+int m_isnan(num x);
+num m_nan(void);
+num m_inf(void);
+
+/* renderer (render.c) */
+extern int scr_w, scr_h;
+void render_init(void);
+shape *parse_shape(const u8 *d, u32 len, int v, int is_glyph, int glyph_fbits_from_data);
+bitmap *parse_lossless(const u8 *d, u32 len, int v2);
+void draw_shape(shape *s, mat m, const cxf *cx, u32 override_color);
+void draw_bitmap_text(const char *s, mat m, float x, float y, float h, u32 color, float clipw, float cliph, int align);
+int shape_hit(shape *s, float x, float y);
+void draw_cursor(int x, int y, int hand);
+void erase_cursor(void);
+mat mat_mul(mat p, mat q);
+mat mat_inv(mat m);
+cxf cx_mul(cxf p, cxf c);
+u32 cx_apply(const cxf *c, u32 col);
+
+#endif

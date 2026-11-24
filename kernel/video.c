@@ -44,6 +44,19 @@ void video_present(int x, int y, int w, int h) {
     }
 }
 
+/* draw straight into the framebuffer (used for the mouse cursor) */
+void video_fb_rect(int x, int y, int w, int h, u32 c) {
+    for (int r = y; r < y + h; r++) {
+        if (r < 0 || r >= scr_h) continue;
+        for (int i = x; i < x + w; i++) {
+            if (i < 0 || i >= scr_w) continue;
+            u8 *d = fb + r * pitch + i * (bpp / 8);
+            if (bpp == 32) *(u32 *)d = c;
+            else { d[0] = (u8)c; d[1] = (u8)(c >> 8); d[2] = (u8)(c >> 16); }
+        }
+    }
+}
+
 void video_fill(int x, int y, int w, int h, u32 c) {
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }

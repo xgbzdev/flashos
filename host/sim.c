@@ -1,11 +1,15 @@
 /* FlashOS host simulator: runs the real FlashKernel code on a normal PC
- * with a fake framebuffer, scripted keyboard and virtual clock, and writes
- * screenshots. Used to test the kernel without an emulator.
+ * with a fake framebuffer, scripted keyboard/mouse and a virtual clock, and
+ * writes screenshots. Used to test the kernel without an emulator.
  * Copyright (c) 2026 FlashOS. All rights reserved.
  *
- * Script lines:  key <ms> <text>   (\n = Enter, \e = Esc)
- *                shot <ms> <name>
- *                end <ms>
+ * Script lines:  key   <ms> <text>        typed into the shell (\n Enter, \u Up, \d Down)
+ *                kd    <ms> <flashcode>   key down (Flash key code)
+ *                ku    <ms> <flashcode>   key up
+ *                mouse <ms> <x> <y>       move mouse (screen pixels)
+ *                mdown <ms>  /  mup <ms>  left button
+ *                shot  <ms> <name>
+ *                end   <ms>
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,15 +20,18 @@ void kmain(void);
 
 #define W 1024
 #define H 768
-static bootinfo_t bi = {0, W * 4, W, H, 32, 0, 0};
+static bootinfo_t bi = {0, W * 4, W, H, 32, 0, 0, 256u << 20};
 static u8 *fbmem, *fsdata, font[4096];
 static u32 now;
 
-typedef struct { u32 t; char kind; char text[128]; int done; } ev;
-static ev evs[256];
+typedef struct { u32 t; char kind[8]; char text[128]; int done; } ev;
+static ev evs[512];
 static int nev;
-static char keyq[512];
-static int kq_head, kq_tail;
+static int cq[512], cq_h, cq_t;
+static struct { int code, down, ascii; } kq[256];
+static int kq_h, kq_t;
+static u8 kstate[256];
+static int mx = 512, my = 384, mb;
 
 static void shot(const char *name) {
     char path[256];
@@ -39,22 +46,37 @@ static void shot(const char *name) {
     printf("  [%6u ms] %s\n", now, path);
 }
 
+static void kev(int code, int down, int ascii) {
+    kstate[code & 255] = (u8)down;
+    kq[kq_t % 256].code = code; kq[kq_t % 256].down = down; kq[kq_t % 256].ascii = ascii;
+    kq_t++;
+}
+
 static void advance(u32 ms) {
     now += ms;
     for (int i = 0; i < nev; i++) {
         ev *e = &evs[i];
         if (e->done || now < e->t) continue;
         e->done = 1;
-        if (e->kind == 's') shot(e->text);
-        else if (e->kind == 'e') { printf("  [%6u ms] end\n", now); exit(0); }
-        else if (e->kind == 'k') {
+        if (!strcmp(e->kind, "shot")) shot(e->text);
+        else if (!strcmp(e->kind, "end")) { printf("  [%6u ms] end\n", now); exit(0); }
+        else if (!strcmp(e->kind, "key")) {
             for (char *c = e->text; *c; c++) {
-                char ch = *c;
+                int ch = (u8)*c;
                 if (ch == '\\' && c[1] == 'n') { ch = '\n'; c++; }
-                else if (ch == '\\' && c[1] == 'e') { ch = 27; c++; }
-                keyq[kq_tail++ % 512] = ch;
+                else if (ch == '\\' && c[1] == 'u') { ch = KEY_UP; c++; }
+                else if (ch == '\\' && c[1] == 'd') { ch = KEY_DOWN; c++; }
+                cq[cq_t++ % 512] = ch;
             }
-        }
+        } else if (!strcmp(e->kind, "kd")) {
+            int code = atoi(e->text);
+            kev(code, 1, (code >= 65 && code <= 90) ? code + 32 : code);
+        } else if (!strcmp(e->kind, "ku")) {
+            kev(atoi(e->text), 0, 0);
+        } else if (!strcmp(e->kind, "mouse")) {
+            sscanf(e->text, "%d %d", &mx, &my);
+        } else if (!strcmp(e->kind, "mdown")) mb = 1;
+        else if (!strcmp(e->kind, "mup")) mb = 0;
     }
 }
 
@@ -64,15 +86,34 @@ u8 *plat_fb(void) { return fbmem; }
 const u8 *plat_font(void) { return font; }
 const u8 *plat_fs(void) { return fsdata; }
 void *plat_heap(u32 *size) { *size = 24u << 20; return malloc(*size); }
+static void *heap2;
+void *plat_heap2(u32 *size) {
+    *size = 200u << 20;
+    if (!heap2) heap2 = malloc(*size);
+    return heap2;
+}
 u32 plat_ms(void) { advance(1); return now; }
 void plat_sleep(u32 ms) { advance(ms); }
 static u32 last_key;
 int plat_key(void) {
     advance(1);
-    if (kq_head == kq_tail || now - last_key < 70) return -1; /* typing speed */
+    kq_h = kq_t;
+    if (cq_h == cq_t || now - last_key < 70) return -1;
     last_key = now;
-    return (u8)keyq[kq_head++ % 512];
+    return cq[cq_h++ % 512];
 }
+void plat_poll(void) {}
+int plat_kevent(int *code, int *down, int *ascii) {
+    if (kq_h == kq_t) return 0;
+    *code = kq[kq_h % 256].code; *down = kq[kq_h % 256].down; *ascii = kq[kq_h % 256].ascii;
+    kq_h++;
+    return 1;
+}
+int plat_kdown(int code) { return code >= 0 && code < 256 && kstate[code]; }
+void plat_mouse(int *x, int *y, int *b) { *x = mx; *y = my; *b = mb; }
+void plat_mouse_set(int x, int y) { (void)x; (void)y; }
+void plat_flush_input(void) { cq_h = cq_t; kq_h = kq_t; memset(kstate, 0, sizeof kstate); }
+void plat_rtc(int *h, int *m, int *s, int *day, int *mon, int *year) { *h = 17; *m = 30; *s = 0; *day = 24; *mon = 11; *year = 2026; }
 void plat_reboot(void) { printf("reboot\n"); exit(0); }
 void plat_poweroff(void) { printf("poweroff\n"); }
 void plat_halt(void) { for (;;) advance(10); }
@@ -89,13 +130,13 @@ int main(int argc, char **argv) {
     bi.fs_bytes = (u32)n;
     f = fopen(argc > 1 ? argv[1] : "script.txt", "r");
     char line[256];
-    while (f && fgets(line, sizeof line, f) && nev < 256) {
-        char kind[16], rest[160] = "";
+    while (f && fgets(line, sizeof line, f) && nev < 512) {
+        char kind[8], rest[160] = "";
         unsigned t;
         line[strcspn(line, "\r\n")] = 0;
-        if (sscanf(line, "%15s %u %159[^\n]", kind, &t, rest) < 2) continue;
+        if (sscanf(line, "%7s %u %159[^\n]", kind, &t, rest) < 2) continue;
         evs[nev].t = t;
-        evs[nev].kind = kind[0];
+        strcpy(evs[nev].kind, kind);
         strcpy(evs[nev].text, rest);
         nev++;
     }

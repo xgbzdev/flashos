@@ -2,6 +2,7 @@
  * Copyright (c) 2026 FlashOS. All rights reserved.
  */
 #include "kernel.h"
+void render_init(void);
 
 static const char *LOGO[] = {
     " ___ _         _    ___  ___ ",
@@ -79,8 +80,10 @@ static void cmd_help(void) {
              "  RUN <name|#>     play a SWF file (or just type its name)\n"
              "  CLS              clear the screen\n"
              "  ABOUT            about FlashOS\n"
+             "  MEM              show installed RAM\n"
              "  REBOOT / SHUTDOWN\n"
-             " While a SWF plays press ESC or F12 to return here.\n");
+             " Up/Down arrows repeat earlier commands.\n"
+             " While a SWF plays press F12 or Ctrl+Q to return here.\n");
 }
 
 static void cmd_ls(void) {
@@ -128,11 +131,36 @@ static void cmd_run(const char *arg) {
 static void cmd_about(void) {
     con_puts("\n FlashOS " OS_VERSION " - the operating system that only plays Flash.\n"
              " Kernel: " KERNEL_NAME " " KERNEL_VERSION " (proprietary)\n"
-             " Memory free: ");
-    put_num(heap_free_bytes() / 1024);
-    con_puts(" KB   Files: ");
+             " Flash player: SWF 1-8 with ActionScript 1.0/2.0\n"
+             " Files: ");
     put_num((u32)fs_count());
     con_putc('\n');
+}
+
+static void cmd_mem(void) {
+    u32 top = plat_bootinfo()->memtop;
+    u32 h2 = 0;
+    plat_heap2(&h2);
+    con_puts("\n Installed RAM:   ");
+    if (top) {
+        u32 mb = (top + 0x7FFFF) >> 20;
+        put_num(mb);
+        con_puts(" MB");
+        if (mb >= 1024) {
+            con_puts("  (");
+            put_num(mb / 1024);
+            con_putc('.');
+            put_num((mb % 1024) * 10 / 1024);
+            con_puts(" GB)");
+        }
+    } else {
+        con_puts("unknown (BIOS did not report it)");
+    }
+    con_puts("\n Kernel + system: 32 MB\n SWF files:       ");
+    put_num((plat_bootinfo()->fs_bytes + 1023) / 1024);
+    con_puts(" KB\n Free for Flash:  ");
+    put_num(h2 >> 20);
+    con_puts(" MB\n");
 }
 
 static void handle(char *line) {
@@ -149,6 +177,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "run") || !kstricmp(line, "play") || !kstricmp(line, "load")) cmd_run(arg);
     else if (!kstricmp(line, "cls") || !kstricmp(line, "clear")) { redraw_header(); }
     else if (!kstricmp(line, "about") || !kstricmp(line, "ver")) cmd_about();
+    else if (!kstricmp(line, "mem") || !kstricmp(line, "ram")) cmd_mem();
     else if (!kstricmp(line, "reboot")) { con_puts("\n Rebooting...\n"); plat_sleep(400); plat_reboot(); }
     else if (!kstricmp(line, "shutdown") || !kstricmp(line, "poweroff")) {
         con_puts("\n Shutting down...\n");
@@ -168,9 +197,22 @@ static void handle(char *line) {
     }
 }
 
+#define HIST 32
+static char hist[HIST][64];
+static int nhist;
+
+static void set_line(char *buf, int *n, const char *src, int max) {
+    while (*n) { con_putc('\b'); (*n)--; }
+    kstrcpy(buf, src, (u32)max);
+    *n = (int)kstrlen(buf);
+    con_puts(buf);
+}
+
+/* Line editor: Backspace, Enter, Up/Down = command history */
 static void read_line(char *buf, int max) {
-    int n = 0, on = 1;
+    int n = 0, on = 1, hi = nhist;
     u32 t = plat_ms();
+    buf[0] = 0;
     con_cursor(1);
     for (;;) {
         int k = plat_key();
@@ -179,9 +221,26 @@ static void read_line(char *buf, int max) {
             continue;
         }
         con_cursor(0);
-        if (k == '\n') { buf[n] = 0; return; }
-        if (k == '\b') { if (n) { n--; con_putc('\b'); } }
-        else if (k >= 32 && k < 127 && n < max - 1) { buf[n++] = (char)k; con_putc((char)k); }
+        if (k == '\n') {
+            buf[n] = 0;
+            if (n && (!nhist || kstricmp(hist[(nhist - 1) % HIST], buf))) {
+                kstrcpy(hist[nhist % HIST], buf, 64);
+                nhist++;
+            }
+            return;
+        }
+        if (k == KEY_UP) {
+            int oldest = nhist > HIST ? nhist - HIST : 0;
+            if (hi > oldest) { hi--; set_line(buf, &n, hist[hi % HIST], max); }
+        } else if (k == KEY_DOWN) {
+            if (hi < nhist) { hi++; set_line(buf, &n, hi < nhist ? hist[hi % HIST] : "", max); }
+        } else if (k == '\b') {
+            if (n) { n--; buf[n] = 0; con_putc('\b'); }
+        } else if (k >= 32 && k < 127 && n < max - 1) {
+            buf[n++] = (char)k;
+            buf[n] = 0;
+            con_putc((char)k);
+        }
         on = 1;
         t = plat_ms();
         con_cursor(1);
@@ -194,6 +253,7 @@ void kmain(void) {
     heap_init(heap, hsize);
     plat_init();
     video_init();
+    render_init();
     con_init();
     boot_animation();
 

@@ -9,11 +9,13 @@ shot 5800 06_denied
 key 6000 run flashlogo\n
 shot 8200 07_flashlogo
 shot 9000 08_flashlogo_b
-key 9500 \e
+kd 9500 27
+ku 9550 27
 shot 10200 09_back
 key 10400 bounce.swf\n
 shot 12500 10_bounce
-key 13000 \e
+kd 13000 27
+ku 13050 27
 key 13500 about\n
 shot 15000 11_about
 end 15100

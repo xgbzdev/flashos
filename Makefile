@@ -11,13 +11,14 @@ CFLAGS  := -m32 -march=i686 -mno-sse -mno-sse2 -mno-mmx -mfpmath=387 -O2 \
            -fno-asynchronous-unwind-tables -fno-exceptions -nostdlib -Wall -Wextra
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 
-KSRC    := kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c kernel/swf.c
+KSRC    := kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c \
+           kernel/render.c kernel/player.c kernel/avm1.c
 KOBJ    := $(patsubst kernel/%.c,build/%.o,$(KSRC) kernel/plat_pc.c)
 FILES   := $(wildcard swf/*.swf) $(wildcard files/*)
 
 all: build/FlashOS.iso
 
-build/%.o: kernel/%.c kernel/kernel.h | build
+build/%.o: kernel/%.c kernel/kernel.h kernel/swf.h | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/entry.o: kernel/entry.asm | build
@@ -52,7 +53,7 @@ run-usb: build/FlashOS.iso
 	qemu-system-i386 -m 256 -vga std -drive file=$<,format=raw
 
 # ---- host simulator: the same kernel code, rendered to PNG files ----
-build/sim: host/sim.c $(KSRC) kernel/kernel.h | build
+build/sim: host/sim.c $(KSRC) kernel/kernel.h kernel/swf.h | build
 	cc -DHOSTED -O2 -g -Ikernel -o $@ host/sim.c $(KSRC) -lm
 
 sim: build/sim build/flashfs.bin

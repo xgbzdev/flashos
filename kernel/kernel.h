@@ -20,11 +20,12 @@ typedef int s32;
 void *memcpy(void *d, const void *s, u32 n);
 void *memset(void *d, int c, u32 n);
 void *memmove(void *d, const void *s, u32 n);
+int memcmp(const void *a, const void *b, u32 n);
 #endif
 
 #define KERNEL_NAME "FlashKernel"
 #define KERNEL_VERSION "1.0"
-#define OS_VERSION "2.0"
+#define OS_VERSION "1.0"
 
 /* ---- lib.c ---- */
 u32 kstrlen(const char *s);
@@ -45,11 +46,17 @@ typedef struct {
     u16 pitch, w, h;
     u8 bpp, pad;
     u32 fs_bytes;
+    u32 memtop;
 } bootinfo_t;
 
 #define KEY_F12 0x10C
+#define KEY_UP 0x101
+#define KEY_DOWN 0x102
 #define KEY_ESC 27
 #define KEY_CTRL_Q 0x11
+
+/* Flash key codes */
+#define FK_F12 123
 
 void plat_init(void);
 bootinfo_t *plat_bootinfo(void);
@@ -59,7 +66,15 @@ const u8 *plat_fs(void);
 void *plat_heap(u32 *size);
 u32 plat_ms(void);
 void plat_sleep(u32 ms);
-int plat_key(void);
+int plat_key(void);              /* shell: next char / KEY_* (drains input) */
+void plat_poll(void);             /* read keyboard + mouse controller */
+int plat_kevent(int *code, int *down, int *ascii); /* Flash key events */
+int plat_kdown(int code);         /* is Flash key code held */
+void plat_mouse(int *x, int *y, int *buttons);
+void plat_mouse_set(int x, int y);
+void plat_flush_input(void);
+void plat_rtc(int *h, int *m, int *s, int *day, int *mon, int *year);
+void *plat_heap2(u32 *size);      /* big heap for ActionScript */
 void plat_reboot(void);
 void plat_poweroff(void);
 void plat_halt(void);
@@ -70,6 +85,7 @@ u32 *video_bb(void);
 void video_init(void);
 void video_present(int x, int y, int w, int h);
 void video_fill(int x, int y, int w, int h, u32 c);
+void video_fb_rect(int x, int y, int w, int h, u32 c);
 
 void con_init(void);
 void con_clear(void);

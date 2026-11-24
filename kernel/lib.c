@@ -23,6 +23,14 @@ void *memmove(void *d, const void *s, u32 n) {
 }
 #endif
 
+#ifndef HOSTED
+int memcmp(const void *a, const void *b, u32 n) {
+    const u8 *x = a, *y = b;
+    for (u32 i = 0; i < n; i++) if (x[i] != y[i]) return x[i] - y[i];
+    return 0;
+}
+#endif
+
 u32 kstrlen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }
 char kupper(char c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 

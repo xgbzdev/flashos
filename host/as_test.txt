@@ -1,0 +1,26 @@
+key 2600 mem\n
+shot 3600 20_mem
+key 3800 \u
+shot 4400 21_history
+key 4500 \n
+key 4700 catch\n
+mouse 5600 300 300
+shot 6400 22_catch_start
+kd 6500 37
+shot 7200 23_moved_left
+ku 7300 37
+mouse 7400 140 155
+shot 7600 24_hover_button
+mdown 7700
+shot 7800 25_press_button
+mup 7900
+mouse 8000 120 200
+shot 9500 26_after_click
+kd 9600 39
+shot 11000 27_moved_right
+ku 11100 39
+shot 14000 28_later
+kd 14100 123
+ku 14150 123
+shot 14800 29_back
+end 14900
