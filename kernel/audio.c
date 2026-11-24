@@ -385,17 +385,14 @@ void audio_pump(void) {
     if (!running || (inw((u16)(nabm + 0x16)) & 1)) { outb((u16)(nabm + 0x1B), 0x01); diag_restarts++; } /* run */
 }
 
+/* End of a movie: silence everything still queued. The card is not stopped:
+ * it plays the silence, halts by itself at the last valid buffer, and
+ * audio_pump() resumes it for the next movie (stopping a running AC'97
+ * channel and restarting it is not reliable on every implementation). */
 void audio_halt(void) {
     audio_stop_all();
     if (!card_ok) return;
-    /* stop, then reset the PCM-out channel so the next movie starts clean */
-    outb((u16)(nabm + 0x1B), 0x00);
-    for (int i = 0; i < 1000 && !(inw((u16)(nabm + 0x16)) & 1); i++) {}
-    outb((u16)(nabm + 0x1B), 0x02);
-    for (int i = 0; i < 1000 && (inb((u16)(nabm + 0x1B)) & 0x02); i++) {}
-    outl((u16)(nabm + 0x10), (u32)bdl);
     for (int i = 0; i < NBUF; i++) memset(dbuf[i], 0, sizeof dbuf[i]);
-    fill_idx = 0;
 }
 #else
 /* simulator: mix into a capture file instead of a sound card */
