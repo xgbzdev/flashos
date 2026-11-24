@@ -17,7 +17,17 @@ sock_path = f"/tmp/flashos-qmp-{mode}.sock"
 if os.path.exists(sock_path):
     os.unlink(sock_path)
 
-media = ["-cdrom", iso, "-boot", "d"] if mode == "cd" else ["-drive", f"file={iso},format=raw,if=ide"]
+extra = sys.argv[4:]   # e.g. hdd.img stick.img
+if mode == "cd":
+    media = ["-cdrom", iso, "-boot", "d"]
+elif mode == "usb":
+    media = ["-drive", f"file={iso},format=raw,if=ide"]
+elif mode == "install":   # CD + blank IDE disk + FAT USB stick
+    media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-cdrom", iso, "-boot", "d",
+             "-device", "qemu-xhci,id=xhci", "-drive", f"if=none,id=stick,format=raw,file={extra[1]}",
+             "-device", "usb-storage,bus=xhci.0,drive=stick"]
+else:                     # "hdd": boot the installed hard disk only
+    media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-boot", "c"]
 qemu = subprocess.Popen(["qemu-system-i386", "-m", "256", "-vga", "std", "-display", "none",
                          "-monitor", f"unix:{sock_path},server,nowait"] + media)
 for _ in range(100):
@@ -58,6 +68,28 @@ def type_text(t):
     for ch in t:
         cmd("sendkey " + KEYS.get(ch, ch))
 
+
+if mode in ("install", "hdd"):
+    time.sleep(9)
+    shot("01_ready")
+    type_text("ls\n")
+    time.sleep(1.5)
+    shot("02_ls")
+    if mode == "install":
+        type_text("usb catch.swf\n")
+        time.sleep(4)
+        shot("03_usb_game")
+        cmd("sendkey f12")
+        time.sleep(1.5)
+        type_text("install\n")
+        time.sleep(1.5)
+        shot("04_install_prompt")
+        type_text("yes\n")
+        time.sleep(8)
+        shot("05_installed")
+    cmd("quit")
+    qemu.wait(timeout=10)
+    sys.exit(0)
 
 time.sleep(1.2)
 shot("01_booting")

@@ -12,7 +12,7 @@ CFLAGS  := -m32 -march=i686 -mno-sse -mno-sse2 -mno-mmx -mfpmath=387 -O2 \
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 
 KSRC    := kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c \
-           kernel/render.c kernel/player.c kernel/avm1.c
+           kernel/render.c kernel/player.c kernel/avm1.c kernel/ata.c
 KOBJ    := $(patsubst kernel/%.c,build/%.o,$(KSRC) kernel/plat_pc.c)
 FILES   := $(wildcard swf/*.swf) $(wildcard files/*)
 
@@ -34,6 +34,21 @@ build/flashkrn.bin: build/flashkrn.elf
 build/mbr.bin: boot/mbr.asm | build
 	nasm -f bin $< -o $@
 
+S2FLAGS := -m16 -march=i386 -Os -ffreestanding -fno-pic -fno-pie -fno-stack-protector \
+           -fno-asynchronous-unwind-tables -fno-tree-loop-distribute-patterns -mno-sse -Wall -Wextra
+
+build/stage2.o: boot/stage2.c | build
+	$(CC) $(S2FLAGS) -c $< -o $@
+
+build/s2entry.o: boot/s2entry.asm | build
+	nasm -f elf32 $< -o $@
+
+build/stage2.bin: build/s2entry.o build/stage2.o boot/stage2.ld
+	ld -m elf_i386 -T boot/stage2.ld -nostdlib -o build/stage2.elf build/s2entry.o build/stage2.o
+	@if nm build/stage2.elf | grep -q ' U '; then nm build/stage2.elf | grep ' U '; exit 1; fi
+	objcopy -O binary build/stage2.elf $@
+	@test $$(stat -c %s $@) -le 28672 || (echo "stage2 too big"; exit 1)
+
 build/loader.bin: boot/loader.asm | build
 	nasm -f bin $< -o $@
 
@@ -43,8 +58,8 @@ swf/bounce.swf swf/flashlogo.swf &: tools/make_demo_swf.py
 build/flashfs.bin: tools/mkfs.py swf/bounce.swf swf/flashlogo.swf $(FILES) | build
 	$(PY) tools/mkfs.py $@ $(sort $(wildcard swf/*.swf) $(wildcard files/*))
 
-build/FlashOS.iso: build/mbr.bin build/loader.bin build/flashkrn.bin build/flashfs.bin tools/mkiso.py
-	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin build/flashkrn.bin build/flashfs.bin $@
+build/FlashOS.iso: build/mbr.bin build/loader.bin build/stage2.bin build/flashkrn.bin build/flashfs.bin tools/mkiso.py
+	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin build/flashkrn.bin build/flashfs.bin build/stage2.bin $@
 
 run: build/FlashOS.iso
 	qemu-system-i386 -m 256 -vga std -cdrom $< -boot d
@@ -55,6 +70,9 @@ run-usb: build/FlashOS.iso
 # ---- host simulator: the same kernel code, rendered to PNG files ----
 build/sim: host/sim.c $(KSRC) kernel/kernel.h kernel/swf.h | build
 	cc -DHOSTED -O2 -g -Ikernel -o $@ host/sim.c $(KSRC) -lm
+
+build/s2test: boot/stage2.c host/s2test.c | build
+	cc -DHOSTED_S2 -O1 -g -o $@ boot/stage2.c host/s2test.c
 
 sim: build/sim build/flashfs.bin
 	$(PY) host/make_font.py build/font.bin

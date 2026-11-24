@@ -10,7 +10,7 @@
 #define FONT_ADDR 0x5000
 #define FS_ADDR 0x02000000
 #define HEAP_ADDR 0x00800000
-#define HEAP_SIZE (0x02000000 - 0x00800000)
+#define HEAP_SIZE (0x01D00000 - 0x00800000) /* 0x1D00000+: installer copies */
 
 static inline void outb(u16 p, u8 v) { __asm__ volatile("outb %0, %1" : : "a"(v), "Nd"(p)); }
 static inline void outw(u16 p, u16 v) { __asm__ volatile("outw %0, %1" : : "a"(v), "Nd"(p)); }
@@ -84,10 +84,12 @@ bootinfo_t *plat_bootinfo(void) { return (bootinfo_t *)BOOTINFO_ADDR; }
 u8 *plat_fb(void) { return (u8 *)plat_bootinfo()->fb; }
 const u8 *plat_font(void) { return (const u8 *)FONT_ADDR; }
 const u8 *plat_fs(void) { return (const u8 *)FS_ADDR; }
+const u8 *plat_usbfs(void) { return plat_bootinfo()->usb_bytes ? (const u8 *)plat_bootinfo()->usb_addr : NULL; }
 void *plat_heap(u32 *size) { *size = HEAP_SIZE; return (void *)HEAP_ADDR; }
 
 void *plat_heap2(u32 *size) {
     u32 base = (FS_ADDR + plat_bootinfo()->fs_bytes + 0xFFFFF) & ~0xFFFFFu;
+    if (plat_bootinfo()->usb_bytes) base = (plat_bootinfo()->usb_addr + plat_bootinfo()->usb_bytes + 0xFFFFF) & ~0xFFFFFu;
     u32 top = plat_bootinfo()->memtop;
     if (top < base + (8u << 20)) top = 0x04000000;     /* assume 64 MB */
     if (top > 0xC0000000u) top = 0xC0000000u;

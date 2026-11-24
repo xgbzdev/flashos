@@ -47,6 +47,7 @@ typedef struct {
     u8 bpp, pad;
     u32 fs_bytes;
     u32 memtop;
+    u32 usb_addr, usb_bytes; /* SWF files found on USB sticks / disks */
 } bootinfo_t;
 
 #define KEY_F12 0x10C
@@ -63,6 +64,7 @@ bootinfo_t *plat_bootinfo(void);
 const u8 *plat_font(void);
 u8 *plat_fb(void);
 const u8 *plat_fs(void);
+const u8 *plat_usbfs(void);
 void *plat_heap(u32 *size);
 u32 plat_ms(void);
 void plat_sleep(u32 ms);
@@ -98,10 +100,16 @@ int con_rows_used(void);
 int con_cols(void);
 
 /* ---- fs.c ---- */
-typedef struct { const char *name; const u8 *data; u32 size; } kfile;
+typedef struct { const char *name; const u8 *data; u32 size; int usb; } kfile;
 int fs_count(void);
 int fs_get(int i, kfile *f);
 int fs_find(const char *name, kfile *f);
+
+/* ---- ata.c (IDE disks, for INSTALL) ---- */
+typedef struct { int base, ctrl, slave; u32 sectors; char model[41]; } ata_disk;
+int ata_scan(ata_disk *out, int max);
+int ata_write(ata_disk *d, u32 lba, const u8 *buf, u32 count);
+int ata_read(ata_disk *d, u32 lba, u8 *buf, u32 count);
 
 /* ---- inflate.c ---- */
 int inflate_raw(const u8 *src, u32 srclen, u8 *dst, u32 dstlen, u32 *outlen);

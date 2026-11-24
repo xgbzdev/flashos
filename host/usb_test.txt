@@ -1,0 +1,9 @@
+key 2600 ls\n
+shot 3800 30_ls_usb
+key 4000 mem\n
+shot 5000 31_mem
+key 5200 install\n
+shot 6200 32_install
+key 6400 My Catch Game.swf\n
+shot 9000 33_usb_game
+end 9100

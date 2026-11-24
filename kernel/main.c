@@ -76,11 +76,12 @@ static int resolve(const char *arg, kfile *f) {
 /* ---------- commands ---------- */
 static void cmd_help(void) {
     con_puts("\n FlashOS commands:\n"
-             "  LS               list files\n"
+             "  LS               list files (built-in + USB sticks)\n"
              "  RUN <name|#>     play a SWF file (or just type its name)\n"
              "  CLS              clear the screen\n"
              "  ABOUT            about FlashOS\n"
              "  MEM              show installed RAM\n"
+             "  INSTALL          install FlashOS on the hard disk\n"
              "  REBOOT / SHUTDOWN\n"
              " Up/Down arrows repeat earlier commands.\n"
              " While a SWF plays press F12 or Ctrl+Q to return here.\n");
@@ -104,7 +105,8 @@ static void cmd_ls(void) {
         for (int k = (int)kstrlen(kb); k < 6; k++) con_putc(' ');
         con_puts(kb);
         con_puts(" KB  ");
-        con_puts(ends_swf(f.name) && is_swf_data(&f) ? "SWF\n" : "---\n");
+        con_puts(ends_swf(f.name) && is_swf_data(&f) ? "SWF" : "---");
+        con_puts(f.usb ? "  USB\n" : "\n");
     }
 }
 
@@ -158,9 +160,100 @@ static void cmd_mem(void) {
     }
     con_puts("\n Kernel + system: 32 MB\n SWF files:       ");
     put_num((plat_bootinfo()->fs_bytes + 1023) / 1024);
-    con_puts(" KB\n Free for Flash:  ");
+    con_puts(" KB built-in");
+    if (plat_bootinfo()->usb_bytes) {
+        con_puts(", ");
+        put_num((plat_bootinfo()->usb_bytes + 1023) / 1024);
+        con_puts(" KB from USB/disks");
+    }
+    con_puts("\n Free for Flash:  ");
     put_num(h2 >> 20);
     con_puts(" MB\n");
+}
+
+static void read_line(char *buf, int max);
+
+/* INSTALL: copy FlashOS onto an IDE hard disk so it boots without the CD/USB.
+ * The disk gets the same layout as the hybrid boot image (MBR + loader + stage 2
+ * + kernel + built-in files), taken from the pristine copies the loader and
+ * the kernel entry code kept in memory. */
+#define SYS_COPY ((const u8 *)0x01F00000)
+#define KRN_COPY ((const u8 *)0x01E00000)
+#define S2_COPY ((const u8 *)0x01D00000)
+static u32 le32(const u8 *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
+
+static int write_part(ata_disk *d, u32 lba, const u8 *src, u32 count, u32 *done, u32 total) {
+    for (u32 i = 0; i < count; i += 16) {
+        u32 n = count - i < 16 ? count - i : 16;
+        if (!ata_write(d, lba + i, src + i * 512, n)) return 0;
+        *done += n;
+        u32 pct = *done * 100 / total;
+        con_puts("\r Installing... ");
+        put_num(pct);
+        con_puts("%   ");
+    }
+    return 1;
+}
+
+static void cmd_install(void) {
+#ifdef HOSTED
+    con_puts("\n No IDE hard disk found.\n");
+    return;
+#else
+    static ata_disk disks[4];
+    int n = ata_scan(disks, 4);
+    if (!n) {
+        con_puts("\n No IDE hard disk found.\n"
+                 " VirtualBox: Settings > Storage, put the disk on an IDE controller.\n"
+                 " Real PC: set SATA mode to IDE / Legacy / Compatibility in the BIOS.\n");
+        return;
+    }
+    const u8 *hd = SYS_COPY + 512;
+    if (SYS_COPY[510] != 0x55 || SYS_COPY[511] != 0xAA || (hd[8] | (hd[9] << 8)) != 512) {
+        con_puts("\n Installer data missing - boot FlashOS from the ISO to install.\n");
+        return;
+    }
+    u32 k_lba = le32(hd + 10), k_cnt = le32(hd + 14), fs_lba = le32(hd + 18), fs_cnt = le32(hd + 22);
+    u32 s2_lba = le32(hd + 30), s2_cnt = le32(hd + 34);
+    u32 need = fs_lba + fs_cnt;
+
+    con_puts("\n Hard disks:\n");
+    for (int i = 0; i < n; i++) {
+        con_puts("  ");
+        put_num((u32)i + 1);
+        con_puts(". ");
+        pad(disks[i].model[0] ? disks[i].model : "ATA disk", 30);
+        put_num(disks[i].sectors / 2048);
+        con_puts(" MB\n");
+    }
+    int pick = 0;
+    char ans[16];
+    if (n > 1) {
+        con_puts(" Install on disk number: ");
+        read_line(ans, sizeof ans);
+        pick = ans[0] - '1';
+        if (pick < 0 || pick >= n || ans[1]) { con_puts("\n Cancelled.\n"); return; }
+    }
+    ata_disk *d = &disks[pick];
+    if (d->sectors < need) { con_puts("\n That disk is too small.\n"); return; }
+    con_puts("\n ALL DATA ON ");
+    con_puts(d->model[0] ? d->model : "this disk");
+    con_puts(" WILL BE ERASED.\n Type YES to install FlashOS: ");
+    read_line(ans, sizeof ans);
+    if (kstricmp(ans, "yes")) { con_puts("\n Cancelled.\n"); return; }
+    con_putc('\n');
+    u32 done = 0, total = 64 + k_cnt + s2_cnt + fs_cnt;
+    int ok = write_part(d, 0, SYS_COPY, 64, &done, total) &&
+             write_part(d, k_lba, KRN_COPY, k_cnt, &done, total) &&
+             write_part(d, s2_lba, S2_COPY, s2_cnt, &done, total) &&
+             write_part(d, fs_lba, plat_fs(), fs_cnt, &done, total);
+    static u8 check[512];
+    if (ok) ok = ata_read(d, 0, check, 1) && !memcmp(check, SYS_COPY, 512);
+    if (!ok) { con_puts("\n Disk write failed. FlashOS was not installed.\n"); return; }
+    con_puts("\n FlashOS is installed on the hard disk.\n"
+             " Remove the CD / USB stick (VirtualBox: Settings > Storage, remove the\n"
+             " ISO), then type REBOOT.\n");
+#endif
 }
 
 static void handle(char *line) {
@@ -168,6 +261,15 @@ static void handle(char *line) {
     u32 n = kstrlen(line);
     while (n && line[n - 1] == ' ') line[--n] = 0;
     if (!*line) return;
+    /* a whole line naming a file, spaces included ("My Game.swf") */
+    {
+        kfile f;
+        if (fs_find(line, &f) || (!ends_swf(line) && resolve(line, &f) && kstrlen(line) > 2)) {
+            int has_space = 0;
+            for (char *p = line; *p; p++) if (*p == ' ') has_space = 1;
+            if (has_space || ends_swf(line)) { cmd_run(line); return; }
+        }
+    }
     char *arg = line;
     while (*arg && *arg != ' ') arg++;
     if (*arg) { *arg++ = 0; while (*arg == ' ') arg++; }
@@ -178,6 +280,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "cls") || !kstricmp(line, "clear")) { redraw_header(); }
     else if (!kstricmp(line, "about") || !kstricmp(line, "ver")) cmd_about();
     else if (!kstricmp(line, "mem") || !kstricmp(line, "ram")) cmd_mem();
+    else if (!kstricmp(line, "install")) cmd_install();
     else if (!kstricmp(line, "reboot")) { con_puts("\n Rebooting...\n"); plat_sleep(400); plat_reboot(); }
     else if (!kstricmp(line, "shutdown") || !kstricmp(line, "poweroff")) {
         con_puts("\n Shutting down...\n");

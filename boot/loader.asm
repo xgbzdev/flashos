@@ -16,8 +16,11 @@ org 0x7C00
 KERNEL_DEST equ 0x00100000
 FS_DEST     equ 0x02000000
 BUF_SEG     equ 0x1000          ; bounce buffer at 0x10000 (32 KB)
-VBE_CTRL    equ 0x8000
-VBE_MODE    equ 0x8200
+VBE_CTRL    equ 0x8800        ; after the loader (0x7C00-0x83FF)
+VBE_MODE    equ 0x8A00
+STAGE2      equ 0x9000        ; USB/disk SWF scanner (real mode C)
+S2_COPY     equ 0x01D00000    ; pristine copies for the installer
+SYS_COPY    equ 0x01F00000
 BOOTINFO    equ 0x6000
 FONT        equ 0x5000
 
@@ -31,6 +34,8 @@ p_kernel_cnt:  dd 0
 p_fs_lba:      dd 0
 p_fs_cnt:      dd 0
 p_fs_bytes:    dd 0
+p_s2_lba:      dd 0
+p_s2_cnt:      dd 0
 
 main:
     cli
@@ -111,6 +116,34 @@ main:
     mov ecx, [p_fs_cnt]
     mov edi, FS_DEST
     call load_region
+    mov eax, [p_fs_bytes]
+    mov [BOOTINFO + 12], eax
+    ; first 32 KB of the boot medium (MBR + loader) for INSTALL
+    xor eax, eax
+    movzx ecx, word [chunk_secs]
+    mov edi, SYS_COPY
+    call load_region
+    ; stage 2: scan USB sticks / extra disks for .swf files
+    mov dword [BOOTINFO + 20], 0
+    mov dword [BOOTINFO + 24], 0
+    mov ecx, [p_s2_cnt]
+    test ecx, ecx
+    jz .no_s2
+    mov eax, [p_s2_lba]
+    mov edi, S2_COPY
+    call load_region
+    mov eax, [p_s2_lba]
+    mov ecx, [p_s2_cnt]
+    mov edi, STAGE2
+    call load_region
+    call go_unreal
+    and esp, 0xFFFF
+    mov dl, [boot_drive]
+    call STAGE2
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+.no_s2:
 
     ; --- graphics mode ---
     call set_video

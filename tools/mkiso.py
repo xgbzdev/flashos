@@ -10,7 +10,7 @@ VMs) that is also a valid MBR disk (dd it to a USB stick):
   sector 19..22      path tables, root directory, boot catalog
   then               LOADER.BIN (2048-byte-sector copy), FLASHKRN.BIN, FLASHFS.BIN
 
-Usage: mkiso.py MBR LOADER KERNEL FLASHFS OUT.iso
+Usage: mkiso.py MBR LOADER KERNEL FLASHFS STAGE2 OUT.iso
 """
 import struct
 import sys
@@ -44,21 +44,22 @@ def dir_record(lba, size, flags, name):
     return rec + (b"\0" if len(rec) % 2 else b"")
 
 
-def patch_loader(loader, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes):
+def patch_loader(loader, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes, s2_lba, s2_cnt):
     b = bytearray(loader)
-    struct.pack_into("<HIIIII", b, 8, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes)
+    struct.pack_into("<HIIIIIII", b, 8, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes, s2_lba, s2_cnt)
     return bytes(b)
 
 
 def main():
-    mbr, loader, kernel, fs = (open(p, "rb").read() for p in sys.argv[1:5])
-    out = sys.argv[5]
+    mbr, loader, kernel, fs, stage2 = (open(p, "rb").read() for p in sys.argv[1:6])
+    out = sys.argv[6]
     assert len(mbr) == 512 and len(loader) == 2048
 
     LBA_PVD, LBA_BOOT, LBA_TERM = 16, 17, 18
     LBA_LPATH, LBA_MPATH, LBA_ROOT, LBA_CAT, LBA_LOADER = 19, 20, 21, 22, 23
     lba_kernel = LBA_LOADER + 1
-    lba_fs = lba_kernel + sectors(len(kernel))
+    lba_s2 = lba_kernel + sectors(len(kernel))
+    lba_fs = lba_s2 + sectors(len(stage2))
     total = lba_fs + sectors(len(fs))
 
     files = [  # ISO 9660 names, sorted
@@ -66,6 +67,7 @@ def main():
         (b"FLASHFS.BIN;1", lba_fs, len(fs)),
         (b"FLASHKRN.BIN;1", lba_kernel, len(kernel)),
         (b"LOADER.BIN;1", LBA_LOADER, SECTOR),
+        (b"STAGE2.BIN;1", lba_s2, len(stage2)),
     ]
     root = dir_record(LBA_ROOT, SECTOR, 2, b"\0") + dir_record(LBA_ROOT, SECTOR, 2, b"\1")
     for name, lba, size in files:
@@ -122,9 +124,9 @@ def main():
     catalog = bytes(val) + entry
 
     loader_cd = patch_loader(loader, 2048, lba_kernel, sectors(len(kernel)),
-                             lba_fs, sectors(len(fs)), len(fs))
+                             lba_fs, sectors(len(fs)), len(fs), lba_s2, sectors(len(stage2)))
     loader_hd = patch_loader(loader, 512, lba_kernel * 4, sectors(len(kernel), 512),
-                             lba_fs * 4, sectors(len(fs), 512), len(fs))
+                             lba_fs * 4, sectors(len(fs), 512), len(fs), lba_s2 * 4, sectors(len(stage2), 512))
 
     # MBR + partition table covering the whole image
     total512 = total * 4
@@ -139,7 +141,7 @@ def main():
 
     img = (bytes(system_area) + bytes(pvd) + bytes(boot) + bytes(term) +
            pad(ptable_l) + pad(ptable_m) + pad(root) + pad(catalog) + loader_cd +
-           pad(kernel) + pad(fs))
+           pad(kernel) + pad(stage2) + pad(fs))
     assert len(img) == total * SECTOR, (len(img), total * SECTOR)
     with open(out, "wb") as f:
         f.write(img)

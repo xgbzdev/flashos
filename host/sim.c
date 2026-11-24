@@ -85,6 +85,8 @@ bootinfo_t *plat_bootinfo(void) { return &bi; }
 u8 *plat_fb(void) { return fbmem; }
 const u8 *plat_font(void) { return font; }
 const u8 *plat_fs(void) { return fsdata; }
+static u8 *usbdata;
+const u8 *plat_usbfs(void) { return usbdata; }
 void *plat_heap(u32 *size) { *size = 24u << 20; return malloc(*size); }
 static void *heap2;
 void *plat_heap2(u32 *size) {
@@ -128,6 +130,8 @@ int main(int argc, char **argv) {
     size_t n = fread(fsdata, 1, 64 << 20, f);
     fclose(f);
     bi.fs_bytes = (u32)n;
+    f = fopen("usbfs.bin", "rb");
+    if (f) { usbdata = malloc(64 << 20); bi.usb_bytes = (u32)fread(usbdata, 1, 64 << 20, f); fclose(f); }
     f = fopen(argc > 1 ? argv[1] : "script.txt", "r");
     char line[256];
     while (f && fgets(line, sizeof line, f) && nev < 512) {
