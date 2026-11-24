@@ -39,7 +39,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest build/FlashOS.iso screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png \
+          gh release create latest build/FlashOS.iso screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png \
             --title "FlashOS (latest build)" \
             --notes "Bootable FlashOS ISO built from ${GITHUB_SHA::7}. Boot it in QEMU/VirtualBox (as a CD) or write it to a USB stick. Legacy BIOS boot." \
             --latest
