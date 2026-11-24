@@ -46,7 +46,7 @@ def dir_record(lba, size, flags, name):
 
 def patch_loader(loader, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes, s2_lba, s2_cnt):
     b = bytearray(loader)
-    struct.pack_into("<HIIIIIII", b, 8, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes, s2_lba, s2_cnt)
+    struct.pack_into("<HIIIIIIII", b, 8, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes, s2_lba, s2_cnt, 0)
     return bytes(b)
 
 

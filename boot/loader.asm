@@ -36,6 +36,7 @@ p_fs_cnt:      dd 0
 p_fs_bytes:    dd 0
 p_s2_lba:      dd 0
 p_s2_cnt:      dd 0
+p_flags:       dd 0              ; bit 0: installed on a hard disk (set by INSTALL)
 
 main:
     cli
@@ -73,6 +74,9 @@ main:
     mov cx, 2048
     rep movsw
     pop ds
+
+    mov eax, [p_flags]
+    mov [BOOTINFO + 60], eax
 
     ; --- memory size (E801) -> BOOTINFO+16 = top of RAM ---
     mov dword [BOOTINFO + 16], 0

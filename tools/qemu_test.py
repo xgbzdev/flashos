@@ -122,6 +122,14 @@ if mode in ("install", "hdd"):
     type_text("usbdiag\n")
     time.sleep(1.5)
     shot("02b_mem")
+    if mode == "hdd":
+        type_text("cls\n")
+        time.sleep(1)
+        type_text("help\n")
+        time.sleep(1.5)
+        type_text("install\n")
+        time.sleep(1.5)
+        shot("03_no_install")
     if mode == "install":
         type_text("usb catch.swf\n")
         time.sleep(4)

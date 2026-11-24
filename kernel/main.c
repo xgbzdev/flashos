@@ -74,6 +74,8 @@ static int resolve(const char *arg, kfile *f) {
 }
 
 /* ---------- commands ---------- */
+static int installed(void) { return plat_bootinfo()->flags & 1; }
+
 static void cmd_help(void) {
     con_puts("\n FlashOS commands:\n"
              "  LS               list files (built-in, USB, downloads)\n"
@@ -81,8 +83,9 @@ static void cmd_help(void) {
              "  CLS              clear the screen\n"
              "  ABOUT            about FlashOS\n"
              "  MEM              show installed RAM\n"
-             "  INSTALL          install FlashOS on the hard disk\n"
-             "  RESCAN           read game CDs / ISO images again\n"
+             "  RESCAN           read game CDs / ISO images again\n");
+    if (!installed()) con_puts("  INSTALL          install FlashOS on the hard disk\n");
+    con_puts(
              "  NET              connect to the network (cable) and show status\n"
              "  PING <host>      test the connection\n"
              "  GET <http://url> download a SWF file from the internet\n"
@@ -257,13 +260,18 @@ static void cmd_install(void) {
     read_line(ans, sizeof ans);
     if (kstricmp(ans, "yes")) { con_puts("\n Cancelled.\n"); return; }
     con_putc('\n');
+    /* mark the hard-disk loader as "installed" (hides INSTALL there) */
+    u8 *sys = kmalloc(64 * 512);
+    if (!sys) { con_puts("\n Not enough memory.\n"); return; }
+    memcpy(sys, SYS_COPY, 64 * 512);
+    sys[512 + 38] |= 1;
     u32 done = 0, total = 64 + k_cnt + s2_cnt + fs_cnt;
-    int ok = write_part(d, 0, SYS_COPY, 64, &done, total) &&
+    int ok = write_part(d, 0, sys, 64, &done, total) &&
              write_part(d, k_lba, KRN_COPY, k_cnt, &done, total) &&
              write_part(d, s2_lba, S2_COPY, s2_cnt, &done, total) &&
              write_part(d, fs_lba, plat_fs(), fs_cnt, &done, total);
     static u8 check[512];
-    if (ok) ok = ata_read(d, 0, check, 1) && !memcmp(check, SYS_COPY, 512);
+    if (ok) ok = ata_read(d, 0, check, 1) && !memcmp(check, sys, 512);
     if (!ok) { con_puts("\n Disk write failed. FlashOS was not installed.\n"); return; }
     con_puts("\n FlashOS is installed on the hard disk.\n"
              " Remove the CD / USB stick (VirtualBox: Settings > Storage, remove the\n"
@@ -391,7 +399,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "cls") || !kstricmp(line, "clear")) { redraw_header(); }
     else if (!kstricmp(line, "about") || !kstricmp(line, "ver")) cmd_about();
     else if (!kstricmp(line, "mem") || !kstricmp(line, "ram")) cmd_mem();
-    else if (!kstricmp(line, "install")) cmd_install();
+    else if (!kstricmp(line, "install") && !installed()) cmd_install();
     else if (!kstricmp(line, "usbdiag")) cmd_usbdiag();
     else if (!kstricmp(line, "net")) cmd_net();
     else if (!kstricmp(line, "rescan")) {
