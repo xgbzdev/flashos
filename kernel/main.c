@@ -76,12 +76,15 @@ static int resolve(const char *arg, kfile *f) {
 /* ---------- commands ---------- */
 static void cmd_help(void) {
     con_puts("\n FlashOS commands:\n"
-             "  LS               list files (built-in + USB sticks)\n"
+             "  LS               list files (built-in, USB, downloads)\n"
              "  RUN <name|#>     play a SWF file (or just type its name)\n"
              "  CLS              clear the screen\n"
              "  ABOUT            about FlashOS\n"
              "  MEM              show installed RAM\n"
              "  INSTALL          install FlashOS on the hard disk\n"
+             "  NET              connect to the network (cable) and show status\n"
+             "  PING <host>      test the connection\n"
+             "  GET <http://url> download a SWF file from the internet\n"
              "  REBOOT / SHUTDOWN\n"
              " Up/Down arrows repeat earlier commands.\n"
              " While a SWF plays press F12 or Ctrl+Q to return here.\n");
@@ -106,7 +109,7 @@ static void cmd_ls(void) {
         con_puts(kb);
         con_puts(" KB  ");
         con_puts(ends_swf(f.name) && is_swf_data(&f) ? "SWF" : "---");
-        con_puts(f.usb ? "  USB\n" : "\n");
+        con_puts(f.usb == 1 ? "  USB\n" : f.usb == 2 ? "  NET\n" : "\n");
     }
 }
 
@@ -282,6 +285,87 @@ static void cmd_usbdiag(void) {
     con_putc('\n');
 }
 
+/* ---------- network ---------- */
+static int net_up(void) {
+    con_puts("\n Connecting...");
+    int r = net_init();
+    con_puts("\r              \r");
+    if (r == 1) return 1;
+    con_puts(r == -1 ? " No supported network card (Intel PRO/1000 or Realtek RTL8139).\n"
+             : r == -2 ? " The network cable is unplugged.\n"
+                       : " No answer from the network (DHCP). Check the cable and router.\n");
+    return 0;
+}
+
+static void cmd_net(void) {
+    int ok = net_up();
+    static char b[512];
+    if (ok || net_init() != -1) { con_puts(net_status(b)); con_putc('\n'); }
+}
+
+static void cmd_ping(const char *host) {
+    if (!*host) { con_puts("\n Usage: PING <host or IP>\n"); return; }
+    if (!net_up()) return;
+    char err[48];
+    for (int i = 0; i < 4; i++) {
+        u32 ms = 0;
+        con_puts(" ");
+        con_puts(host);
+        if (net_ping(host, &ms, err)) { con_puts(": reply in "); put_num(ms); con_puts(" ms\n"); }
+        else { con_puts(": "); con_puts(err); con_putc('\n'); if (kstricmp(err, "no reply")) return; }
+        plat_sleep(400);
+    }
+}
+
+static void cmd_get(const char *url) {
+    if (!*url) { con_puts("\n Usage: GET http://site/file.swf\n"); return; }
+    if (!net_up()) return;
+    con_puts(" Downloading... (Esc cancels)");
+    u8 *data;
+    u32 len;
+    int status = 0;
+    char err[48];
+    int ok = net_get(url, &data, &len, &status, err);
+    con_puts("\r                              \r");
+    if (!ok) { con_puts(" Download failed: "); con_puts(err); con_putc('\n'); return; }
+    if (status != 200) { con_puts(" Server answered "); put_num((u32)status); con_puts(" - nothing saved.\n"); return; }
+    int swf = len > 8 && (data[0] == 'F' || data[0] == 'C' || data[0] == 'Z') && data[1] == 'W' && data[2] == 'S';
+    if (!swf) {
+        con_puts(" Received ");
+        put_num(len);
+        con_puts(" bytes, but it is not a SWF file - not saved:\n");
+        int lines = 0, col = 0;
+        for (u32 i = 0; i < len && i < 600 && lines < 6; i++) {
+            char c = (char)data[i];
+            if (c == '\n') { con_putc('\n'); lines++; col = 0; continue; }
+            if (c < 32 || c > 126 || col > 70) continue;
+            if (!col) con_puts("  ");
+            con_putc(c);
+            col++;
+        }
+        con_putc('\n');
+        return;
+    }
+    /* file name = last part of the URL */
+    const char *nm = url, *q;
+    for (q = url; *q && *q != '?' && *q != '#'; q++) if (*q == '/') nm = q + 1;
+    char name[56];
+    u32 n = (u32)(q - nm);
+    if (n > 50) n = 50;
+    for (u32 i = 0; i < n; i++) name[i] = nm[i];
+    name[n] = 0;
+    if (!n) kstrcpy(name, "download", 56);
+    if (!ends_swf(name)) kstrcpy(name + kstrlen(name), ".swf", 6);
+    if (!fs_add_download(name, data, len)) { con_puts(" Not enough memory to keep it.\n"); return; }
+    con_puts(" Saved ");
+    con_puts(name);
+    con_puts(" (");
+    put_num((len + 1023) / 1024);
+    con_puts(" KB). Type RUN ");
+    con_puts(name);
+    con_puts(" to play it.\n");
+}
+
 static void handle(char *line) {
     while (*line == ' ') line++;
     u32 n = kstrlen(line);
@@ -308,6 +392,9 @@ static void handle(char *line) {
     else if (!kstricmp(line, "mem") || !kstricmp(line, "ram")) cmd_mem();
     else if (!kstricmp(line, "install")) cmd_install();
     else if (!kstricmp(line, "usbdiag")) cmd_usbdiag();
+    else if (!kstricmp(line, "net")) cmd_net();
+    else if (!kstricmp(line, "ping")) cmd_ping(arg);
+    else if (!kstricmp(line, "get") || !kstricmp(line, "download")) cmd_get(arg);
     else if (!kstricmp(line, "reboot")) { con_puts("\n Rebooting...\n"); plat_sleep(400); plat_reboot(); }
     else if (!kstricmp(line, "shutdown") || !kstricmp(line, "poweroff")) {
         con_puts("\n Shutting down...\n");

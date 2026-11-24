@@ -94,7 +94,7 @@ void *plat_heap2(u32 *size) {
     if (top < base + (8u << 20)) top = 0x04000000;     /* assume 64 MB */
     if (top > 0xC0000000u) top = 0xC0000000u;
     if (top < base + (4u << 20)) { *size = 0; return 0; }
-    *size = top - base;
+    *size = top - base - net_reserved;
     return (void *)base;
 }
 

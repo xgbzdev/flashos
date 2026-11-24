@@ -26,6 +26,9 @@ elif mode == "install":   # CD + blank IDE disk + FAT USB stick
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-cdrom", iso, "-boot", "d",
              "-device", "qemu-xhci,id=xhci", "-drive", f"if=none,id=stick,format=raw,file={extra[1]}",
              "-device", "usb-storage,bus=xhci.0,drive=stick"]
+elif mode in ("net", "net8139"):
+    model = "e1000" if mode == "net" else "rtl8139"
+    media = ["-cdrom", iso, "-boot", "d", "-nic", f"user,model={model}"]
 else:                     # "hdd": boot the installed hard disk only
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-boot", "c"]
 qemu = subprocess.Popen(["qemu-system-i386", "-m", "256", "-vga", "std", "-display", "none",
@@ -61,13 +64,40 @@ def shot(name):
     print("screenshot", name)
 
 
-KEYS = {" ": "spc", "\n": "ret", ".": "dot", "-": "minus"}
+KEYS = {" ": "spc", "\n": "ret", ".": "dot", "-": "minus", ":": "shift-semicolon", "/": "slash"}
 
 
 def type_text(t):
     for ch in t:
         cmd("sendkey " + KEYS.get(ch, ch))
 
+
+if mode in ("net", "net8139"):
+    time.sleep(9)
+    type_text("net\n")
+    time.sleep(8)
+    shot("01_net")
+    type_text("cls\n")
+    time.sleep(1)
+    type_text("ping 10.0.2.2\n")
+    time.sleep(6)
+    type_text("get http://10.0.2.2:8000/netlogo.swf\n")
+    time.sleep(6)
+    type_text("ls\n")
+    time.sleep(1.5)
+    shot("02_get")
+    if mode == "net":
+        type_text("cls\n")
+        time.sleep(1)
+        type_text("get http://example.com/\n")
+        time.sleep(10)
+        shot("03_web")
+        type_text("netlogo\n")
+        time.sleep(4)
+        shot("04_play")
+    cmd("quit")
+    qemu.wait(timeout=10)
+    sys.exit(0)
 
 if mode in ("install", "hdd"):
     time.sleep(9)

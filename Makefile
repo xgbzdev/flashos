@@ -12,7 +12,7 @@ CFLAGS  := -m32 -march=i686 -mno-sse -mno-sse2 -mno-mmx -mfpmath=387 -O2 \
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 
 KSRC    := kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c \
-           kernel/render.c kernel/player.c kernel/avm1.c kernel/ata.c
+           kernel/render.c kernel/player.c kernel/avm1.c kernel/ata.c kernel/net.c
 KOBJ    := $(patsubst kernel/%.c,build/%.o,$(KSRC) kernel/plat_pc.c)
 FILES   := $(wildcard swf/*.swf) $(wildcard files/*)
 

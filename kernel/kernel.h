@@ -112,6 +112,14 @@ int ata_scan(ata_disk *out, int max);
 int ata_write(ata_disk *d, u32 lba, const u8 *buf, u32 count);
 int ata_read(ata_disk *d, u32 lba, u8 *buf, u32 count);
 
+/* ---- net.c (wired network) ---- */
+int net_init(void);                  /* 1 ok, -1 no card, -2 no cable, -3 no DHCP */
+const char *net_status(char *buf);
+int net_ping(const char *host, u32 *ms, char *err);
+int net_get(const char *url, u8 **data, u32 *len, int *status, char *err);
+extern u32 net_reserved;             /* bytes at the top of RAM used by downloads */
+int fs_add_download(const char *name, const u8 *data, u32 len);
+
 /* ---- inflate.c ---- */
 int inflate_raw(const u8 *src, u32 srclen, u8 *dst, u32 dstlen, u32 *outlen);
 
