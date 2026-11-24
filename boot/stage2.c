@@ -275,13 +275,16 @@ static void scan_volume(fat_t *f) {
     for (int i = 0; i < n; i++) scan_chain(f, dirs[i], 0);
 }
 
+static u8 *diag; /* bootinfo+28: disks, EDD mask, FAT mask, files */
+
 static void scan_drive(u8 drive) {
     fat_t f;
     if (!read_sec(drive, 0, sec)) return;
+    diag[4] |= (u8)(1 << (drive & 7));
     if (sec[510] != 0x55 || sec[511] != 0xAA) return;
     /* unpartitioned "superfloppy" stick? */
     u32 bps = rd16(sec + 11);
-    if ((sec[0] == 0xEB || sec[0] == 0xE9) && bps == 512 && mount(&f, drive, 0)) { scan_volume(&f); return; }
+    if ((sec[0] == 0xEB || sec[0] == 0xE9) && bps == 512 && mount(&f, drive, 0)) { diag[2] |= (u8)(1 << (drive & 7)); scan_volume(&f); return; }
     u8 mbr[64];
     memcpy(mbr, sec + 446, 64);
     for (int p = 0; p < 4; p++) {
@@ -289,7 +292,7 @@ static void scan_drive(u8 drive) {
         u32 start = rd32(mbr + p * 16 + 8);
         if (type == 0x04 || type == 0x06 || type == 0x0E || type == 0x0B || type == 0x0C || type == 0x1B ||
             type == 0x1C || type == 0x1E)
-            if (start && mount(&f, drive, start)) scan_volume(&f);
+            if (start && mount(&f, drive, start)) { diag[2] |= (u8)(1 << (drive & 7)); scan_volume(&f); }
     }
 }
 
@@ -303,6 +306,8 @@ void s2_main(void) {
     fatsec_lba = 0xFFFFFFFF;
     nsub = 0;
     lfn_ok = 0;
+    diag = PHYS(BOOTINFO + 28);
+    diag[0] = 0xEE; /* not scanned: too little memory */
     if (memtop < base + (40u << 20)) return;
     limit = memtop - base - (32u << 20); /* keep 32 MB for ActionScript */
     arch = PHYS(base);
@@ -310,10 +315,13 @@ void s2_main(void) {
     data_pos = 8 + MAX_FILES * 64;
     int n = disk_count();
     if (n > 8) n = 8;
+    diag = PHYS(BOOTINFO + 28);
+    diag[0] = (u8)n; diag[1] = 0; diag[2] = 0; diag[3] = 0; diag[4] = 0;
     for (int i = 0; i < n; i++) {
         u8 d = (u8)(0x80 + i);
-        if (disk_ok(d)) scan_drive(d);
+        if (disk_ok(d)) { diag[1] |= (u8)(1 << i); scan_drive(d); }
     }
+    diag[3] = (u8)nfiles;
     if (!nfiles) return;
     arch[0] = 'F'; arch[1] = 'L'; arch[2] = 'F'; arch[3] = 'S';
     wr32(arch + 4, nfiles);

@@ -166,6 +166,17 @@ static void cmd_mem(void) {
         put_num((plat_bootinfo()->usb_bytes + 1023) / 1024);
         con_puts(" KB from USB/disks");
     }
+    const u8 *dg = (const u8 *)plat_bootinfo() + 28;
+    con_puts("\n USB / disks:     ");
+    if (dg[0] == 0xEE) con_puts("not scanned (needs more RAM)");
+    else {
+        put_num(dg[0]);
+        con_puts(" BIOS disk(s), FAT on: ");
+        int any = 0;
+        for (int i = 0; i < 8; i++)
+            if (dg[2] & (1 << i)) { if (any) con_puts(", "); con_puts("disk "); put_num((u32)i + 1); any = 1; }
+        if (!any) con_puts("none");
+    }
     con_puts("\n Free for Flash:  ");
     put_num(h2 >> 20);
     con_puts(" MB\n");

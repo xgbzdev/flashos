@@ -48,7 +48,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest build/FlashOS.iso screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png \
+          gh release create latest build/FlashOS.iso screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png \
             --title "FlashOS (latest build)" \
             --notes "Bootable FlashOS ISO built from ${GITHUB_SHA::7}. Boot it in QEMU/VirtualBox (as a CD) or write it to a USB stick. Legacy BIOS boot." \
             --latest

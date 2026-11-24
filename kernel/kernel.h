@@ -48,6 +48,7 @@ typedef struct {
     u32 fs_bytes;
     u32 memtop;
     u32 usb_addr, usb_bytes; /* SWF files found on USB sticks / disks */
+    u8 diag[8];              /* stage 2 scan report */
 } bootinfo_t;
 
 #define KEY_F12 0x10C

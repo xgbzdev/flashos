@@ -139,6 +139,8 @@ void con_putc(char ch) {
     if (ch == '\n') {
         cx = 0;
         if (++cy >= rows) scroll();
+    } else if (ch == '\r') {
+        cx = 0;
     } else if (ch == '\b') {
         if (cx > 0) { cx--; grid[cy][cx] = ' '; draw_cell(cx, cy); }
     } else {
