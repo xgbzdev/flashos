@@ -35,6 +35,7 @@ static s16 sring[SRING * 2];
 static u32 s_w, s_r;    /* frames written / read (16.16 for read) */
 static u32 s_rfrac, s_step;
 static int s_active;
+u32 diag_pushed, diag_mixed, diag_pumps, diag_restarts, diag_blocks, diag_mp3frames;
 
 static u32 step_for(int rate) { return ((u32)rate << 16) / (u32)out_rate; } /* rates < 65536 */
 
@@ -69,6 +70,7 @@ void audio_stop_all(void) {
 }
 
 void audio_stream_push(const s16 *pcm, u32 frames, int rate) {
+    diag_pushed += frames;
 #ifdef HOSTED_TRACE
     fprintf(stderr, "push t=%u frames=%u queued=%u peak=%d\n", plat_ms(), frames, s_w - s_r, pcm[400]);
 #endif
@@ -107,6 +109,7 @@ static void mix(s16 *out, u32 frames) {
             u32 k = s_r & (SRING - 1);
             acc[i * 2] += sring[k * 2];
             acc[i * 2 + 1] += sring[k * 2 + 1];
+            diag_mixed++;
             s_rfrac += s_step;
             s_r += s_rfrac >> 16;
             s_rfrac &= 0xFFFF;
@@ -267,6 +270,7 @@ static u8 sbuf[16384];
 static u32 sbuf_n;
 void audio_stream_mp3_reset(void) { mp3dec_init(&sdec); sbuf_n = 0; }
 void audio_stream_mp3(const u8 *d, u32 n) {
+    diag_blocks++;
     static s16 pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
     static s16 st[MINIMP3_MAX_SAMPLES_PER_FRAME];
     if (sbuf_n + n > sizeof sbuf) sbuf_n = 0;
@@ -278,6 +282,7 @@ void audio_stream_mp3(const u8 *d, u32 n) {
         int s = mp3dec_decode_frame(&sdec, sbuf + off, (int)(sbuf_n - off), pcm, &info);
         if (!info.frame_bytes) break;
         off += (u32)info.frame_bytes;
+        diag_mp3frames++;
         if (s > 0) {
             for (int i = 0; i < s; i++) {
                 st[i * 2] = pcm[info.channels == 2 ? i * 2 : i];
@@ -362,6 +367,7 @@ int audio_rate(void) { return out_rate; }
 
 void audio_pump(void) {
     if (!card_ok) return;
+    diag_pumps++;
     u8 civ = inb((u16)(nabm + 0x14));
     u8 cr = inb((u16)(nabm + 0x1B));
     int running = cr & 1;
@@ -374,7 +380,7 @@ void audio_pump(void) {
         queued++;
     }
     outw((u16)(nabm + 0x16), 0x1C);                     /* clear status */
-    if (!running || (inw((u16)(nabm + 0x16)) & 1)) outb((u16)(nabm + 0x1B), 0x01); /* run */
+    if (!running || (inw((u16)(nabm + 0x16)) & 1)) { outb((u16)(nabm + 0x1B), 0x01); diag_restarts++; } /* run */
 }
 
 void audio_halt(void) {

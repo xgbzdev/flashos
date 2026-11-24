@@ -377,6 +377,18 @@ static void cmd_get(const char *url) {
     con_puts(" to play it.\n");
 }
 
+extern u32 diag_pushed, diag_mixed, diag_pumps, diag_restarts, diag_blocks, diag_mp3frames;
+static void cmd_snddiag(void) {
+    con_puts("\n blocks="); put_num(diag_blocks);
+    con_puts(" mp3frames="); put_num(diag_mp3frames);
+    con_puts(" pushed="); put_num(diag_pushed);
+    con_puts(" mixed="); put_num(diag_mixed);
+    con_puts("\n pumps="); put_num(diag_pumps);
+    con_puts(" restarts="); put_num(diag_restarts);
+    con_puts(" rate="); put_num((u32)audio_rate());
+    con_putc('\n');
+}
+
 static void cmd_vol(const char *arg) {
     if (*arg) {
         int v = 0;
@@ -419,6 +431,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "usbdiag")) cmd_usbdiag();
     else if (!kstricmp(line, "net")) cmd_net();
     else if (!kstricmp(line, "vol") || !kstricmp(line, "volume")) cmd_vol(arg);
+    else if (!kstricmp(line, "snddiag")) cmd_snddiag();
     else if (!kstricmp(line, "rescan")) {
         con_puts("\n Reading CD drives...");
         int n = cd_scan();
