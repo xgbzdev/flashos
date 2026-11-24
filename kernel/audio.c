@@ -35,12 +35,13 @@ static s16 sring[SRING * 2];
 static u32 s_w, s_r;    /* frames written / read (16.16 for read) */
 static u32 s_rfrac, s_step;
 static int s_active;
-u32 diag_pushed, diag_mixed, diag_pumps, diag_restarts, diag_blocks, diag_mp3frames;
+u32 diag_voices, diag_voice_frames, diag_pushed, diag_mixed, diag_pumps, diag_restarts, diag_blocks, diag_mp3frames;
 
 static u32 step_for(int rate) { return ((u32)rate << 16) / (u32)out_rate; } /* rates < 65536 */
 
 int audio_play(const s16 *pcm, u32 frames, int rate, int loops, int vol, int tag, int sound) {
     if (!pcm || !frames) return -1;
+    diag_voices++;
     for (int i = 0; i < MAXV; i++)
         if (!V[i].active) {
             V[i].pcm = pcm;
@@ -99,6 +100,7 @@ static void mix(s16 *out, u32 frames) {
                 if (--c->loops > 0) { c->pos = 0; p = 0; }
                 else { c->active = 0; break; }
             }
+            diag_voice_frames++;
             acc[i * 2] += c->pcm[p * 2] * c->vol >> 8;
             acc[i * 2 + 1] += c->pcm[p * 2 + 1] * c->vol >> 8;
             c->pos += c->step;

@@ -377,7 +377,7 @@ static void cmd_get(const char *url) {
     con_puts(" to play it.\n");
 }
 
-extern u32 diag_pushed, diag_mixed, diag_pumps, diag_restarts, diag_blocks, diag_mp3frames;
+extern u32 diag_voices, diag_voice_frames, diag_pushed, diag_mixed, diag_pumps, diag_restarts, diag_blocks, diag_mp3frames;
 static void cmd_snddiag(void) {
     con_puts("\n blocks="); put_num(diag_blocks);
     con_puts(" mp3frames="); put_num(diag_mp3frames);
@@ -386,6 +386,10 @@ static void cmd_snddiag(void) {
     con_puts("\n pumps="); put_num(diag_pumps);
     con_puts(" restarts="); put_num(diag_restarts);
     con_puts(" rate="); put_num((u32)audio_rate());
+    con_puts("\n voices="); put_num(diag_voices);
+    con_puts(" voice_frames="); put_num(diag_voice_frames);
+    con_puts(" master="); put_num((u32)audio_get_master());
+    con_puts(audio_get_muted() ? " MUTED" : "");
     con_putc('\n');
 }
 
