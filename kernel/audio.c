@@ -385,7 +385,15 @@ void audio_pump(void) {
 
 void audio_halt(void) {
     audio_stop_all();
-    if (card_ok) outb((u16)(nabm + 0x1B), 0x00);
+    if (!card_ok) return;
+    /* stop, then reset the PCM-out channel so the next movie starts clean */
+    outb((u16)(nabm + 0x1B), 0x00);
+    for (int i = 0; i < 1000 && !(inw((u16)(nabm + 0x16)) & 1); i++) {}
+    outb((u16)(nabm + 0x1B), 0x02);
+    for (int i = 0; i < 1000 && (inb((u16)(nabm + 0x1B)) & 0x02); i++) {}
+    outl((u16)(nabm + 0x10), (u32)bdl);
+    for (int i = 0; i < NBUF; i++) memset(dbuf[i], 0, sizeof dbuf[i]);
+    fill_idx = 0;
 }
 #else
 /* simulator: mix into a capture file instead of a sound card */
