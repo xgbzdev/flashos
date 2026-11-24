@@ -38,15 +38,17 @@ static int disk_count(void) { return host_ndisks; }
 u32 s2_bios13(u32 ax, u32 dx, u32 si, u32 bx);
 void s2_unreal(void);
 extern u16 s2_bx;
+/* volatile: stops gcc turning these loops into movsb/stosb, which in
+ * 16-bit code would use 16-bit SI/DI and wrap at 64 KB */
 void *memset(void *d, int c, u32 n) {
-    u8 *dd = d;
-    while (n--) *dd++ = (u8)c;
+    volatile u8 *dd = d;
+    for (u32 i = 0; i < n; i++) dd[i] = (u8)c;
     return d;
 }
 void *memcpy(void *d, const void *s, u32 n) {
-    u8 *dd = d;
-    const u8 *ss = s;
-    while (n--) *dd++ = *ss++;
+    volatile u8 *dd = d;
+    const volatile u8 *ss = s;
+    for (u32 i = 0; i < n; i++) dd[i] = ss[i];
     return d;
 }
 int memcmp(const void *a, const void *b, u32 n) {

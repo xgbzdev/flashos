@@ -48,6 +48,8 @@ build/stage2.bin: build/s2entry.o build/stage2.o boot/stage2.ld
 	@if nm build/stage2.elf | grep -q ' U '; then nm build/stage2.elf | grep ' U '; exit 1; fi
 	objcopy -O binary build/stage2.elf $@
 	@test $$(stat -c %s $@) -le 28672 || (echo "stage2 too big"; exit 1)
+	@if objdump -d -Mi8086 build/stage2.elf | grep -E '^\s+[0-9a-f]+:\s+(f[23] )?(a[4-7]|a[a-f])\s' ; then \
+		echo "stage2: 16-bit string instruction (would wrap at 64 KB)"; exit 1; fi
 
 build/loader.bin: boot/loader.asm | build
 	nasm -f bin $< -o $@
