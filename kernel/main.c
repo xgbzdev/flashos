@@ -78,7 +78,7 @@ static int installed(void) { return plat_bootinfo()->flags & 1; }
 
 static void cmd_help(void) {
     con_puts("\n FlashOS commands:\n"
-             "  LS               list files (built-in, USB, downloads)\n"
+             "  LS               list files (built-in, USB, CD, NET)\n"
              "  RUN <name|#>     play a SWF file (or just type its name)\n"
              "  CLS              clear the screen\n"
              "  ABOUT            about FlashOS\n"
@@ -86,7 +86,7 @@ static void cmd_help(void) {
              "  RESCAN           read game CDs / ISO images again\n");
     if (!installed()) con_puts("  INSTALL          install FlashOS on the hard disk\n");
     con_puts(
-             "  NET              connect to the network (cable) and show status\n"
+             "  NET              connect to the wired network\n"
              "  PING <host>      test the connection\n"
              "  GET <http://url> download a SWF file from the internet\n"
              "  REBOOT / SHUTDOWN\n"

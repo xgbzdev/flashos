@@ -33,7 +33,8 @@ appears.
 | `LS`               | list files                                    |
 | `RUN <name or #>`  | play a SWF (or just type `game.swf` / `game`) |
 | `MEM`              | show how much RAM is installed                 |
-| `INSTALL`          | install FlashOS on the hard disk               |
+| `INSTALL`          | install FlashOS on the hard disk (only when started from the ISO) |
+| `RESCAN`           | read game CDs / ISO images again               |
 | `NET`              | connect to the wired network, show IP / status |
 | `PING <host>`      | test the connection                            |
 | `GET <http://url>` | download a SWF from the internet               |
@@ -64,11 +65,22 @@ Long file names work, and the hidden `._` files macOS creates are ignored.
 Sticks plugged in after start-up are not seen. Files are read-only, and they
 have to fit in RAM.
 
+## Game CDs / ISO images
+
+Put SWF files in a plain data ISO and insert it as a second CD: FlashOS reads
+every CD drive at start-up and lists the games with a **CD** tag (folders one
+level down and long names included). After swapping the disc, type `RESCAN`.
+
+On a Mac: `hdiutil makehybrid -iso -joliet -o MyGames.iso ~/Desktop/MyGames`.
+In VirtualBox, put that ISO on the **IDE controller** (FlashOS reads CD drives
+through IDE).
+
 ## Installing on the hard disk
 
 Boot from the ISO once and type `INSTALL`. FlashOS lists the hard disks, asks
 you to type `YES` (the disk is erased), copies itself, and checks the copy.
 Then remove the CD / ISO and reboot: FlashOS now starts from the disk.
+On an installed system the `INSTALL` command no longer exists.
 
 INSTALL uses the IDE interface. VirtualBox's default IDE controller and QEMU
 work. On real PCs, set the SATA mode to *IDE / Legacy / Compatibility* in the
