@@ -33,6 +33,10 @@ appears.
 | `LS`               | list files                                    |
 | `RUN <name or #>`  | play a SWF (or just type `game.swf` / `game`) |
 | `MEM`              | show how much RAM is installed                 |
+| `INSTALL`          | install FlashOS on the hard disk               |
+| `NET`              | connect to the wired network, show IP / status |
+| `PING <host>`      | test the connection                            |
+| `GET <http://url>` | download a SWF from the internet               |
 | `CLS`, `ABOUT`, `HELP`, `REBOOT`, `SHUTDOWN` | the usual           |
 
 **Up / Down arrows** bring back earlier commands, as in a normal terminal.
@@ -42,6 +46,46 @@ checks the file extension and also the file's header (`FWS`/`CWS`/`ZWS`).
 
 While a movie plays, **F12** or **Ctrl+Q** returns to the prompt. Esc also works
 for plain animations; in ActionScript games Esc goes to the game.
+
+## Games on USB sticks and extra disks
+
+While booting, FlashOS checks every USB stick and extra disk the PC's BIOS can
+see. On each FAT16 or FAT32 drive it loads the `.swf` files in the top folder
+and in folders one level down, and lists them in `LS` with a **USB** tag.
+Long file names work, and the hidden `._` files macOS creates are ignored.
+
+* **Real PC:** format the stick as FAT32 (macOS Disk Utility: "MS-DOS (FAT)"),
+  copy your games onto it, plug it in, then boot FlashOS.
+* **VirtualBox:** VirtualBox's BIOS can't see USB sticks, so use a small
+  virtual disk instead. On a Mac:
+  `tools/make-games-disk-mac.sh ~/Desktop/MyGames` makes `FlashGames.vdi`.
+  Add it in *Settings → Storage → IDE controller → Add hard disk*.
+
+Sticks plugged in after start-up are not seen. Files are read-only, and they
+have to fit in RAM.
+
+## Installing on the hard disk
+
+Boot from the ISO once and type `INSTALL`. FlashOS lists the hard disks, asks
+you to type `YES` (the disk is erased), copies itself, and checks the copy.
+Then remove the CD / ISO and reboot: FlashOS now starts from the disk.
+
+INSTALL uses the IDE interface. VirtualBox's default IDE controller and QEMU
+work. On real PCs, set the SATA mode to *IDE / Legacy / Compatibility* in the
+BIOS setup.
+
+## Internet (wired only)
+
+`NET` connects with a network cable (DHCP) and shows the address. `PING` tests
+the connection. `GET http://site/game.swf` downloads a SWF into memory; it shows
+up in `LS` with a **NET** tag and plays like any other file. Downloads last
+until you reboot.
+
+* Network cards: **Intel PRO/1000** family (VirtualBox's and QEMU's default
+  adapter, some Intel PCs) and **Realtek RTL8139**. Other cards (for example
+  the common Realtek RTL8111 or Intel I219) aren't supported yet.
+* **Only `http://`**: HTTPS needs encryption FlashOS doesn't have, so
+  HTTPS-only sites (including GitHub) can't be used. Wi-Fi isn't supported.
 
 ## The built-in Flash player
 
@@ -117,6 +161,8 @@ packed into the FlashFS archive on the disc. The total must stay under about
 
 ```
 boot/mbr.asm        USB/HDD boot sector: loads the stage loader
+boot/stage2.c       real-mode C (gcc -m16): finds .swf files on USB sticks /
+                    disks through the BIOS (FAT16/FAT32 reader)
 boot/loader.asm     stage loader: A20, BIOS font, loads kernel + FlashFS
                     through unreal mode, picks a VESA 1024x768 mode,
                     enters 32-bit protected mode
@@ -129,6 +175,8 @@ kernel/inflate.c    DEFLATE decoder
 kernel/render.c     anti-aliased vector rasteriser, text, pixel cursor
 kernel/player.c     SWF timeline, display tree, buttons, mouse/key events
 kernel/avm1.c       ActionScript 1.0/2.0 virtual machine and built-in classes
+kernel/ata.c        IDE disk driver (INSTALL)
+kernel/net.c        network drivers and DHCP / DNS / TCP / HTTP
 tools/mkiso.py      writes the ISO 9660 + El Torito + MBR hybrid image
 tools/mkfs.py       packs files into FlashFS
 tools/make_demo_swf.py  builds the demo movies (it includes a small AVM1
