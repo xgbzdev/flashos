@@ -628,8 +628,9 @@ static void tcp_in(u32 src, const u8 *s, u32 len) {
     u32 dl = len - hl;
     if (flags & 0x04) { tc.state = -1; return; }
     if (tc.state == 1) {
-        if ((flags & 0x12) == 0x12 && ack == tc.snd_nxt) {
+        if ((flags & 0x12) == 0x12 && ack == tc.snd_nxt + 1) { /* SYN consumes one number */
             tc.rcv_nxt = seq + 1;
+            tc.snd_nxt = ack;
             tc.snd_una = ack;
             tc.state = 2;
             tcp_send(0x10, 0, 0);
@@ -692,7 +693,6 @@ static int http_once(const char *url, u8 *buf, u32 cap, u32 *outlen, char *err) 
         u32 t = plat_ms();
         while (plat_ms() - t < 1500 && tc.state == 1) net_poll();
     }
-    tc.snd_nxt++;
     if (tc.state != 2) { tcp_handler = NULL; kstrcpy(err, tc.state < 0 ? "connection refused" : "no answer from server", 48); return 0; }
     /* request */
     static char req[600];
