@@ -17,7 +17,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm gcc-multilib qemu-system-x86 python3-pil dosfstools mtools genisoimage
+          sudo apt-get install -y nasm gcc-multilib qemu-system-x86 python3-pil python3-numpy dosfstools mtools genisoimage
 
       - name: Build FlashOS.iso
         run: make
@@ -37,6 +37,10 @@ jobs:
           mkdir -p gamecd/more && cp swf/catch.swf "gamecd/CD Game.swf" && cp swf/bounce.swf gamecd/more/cdbounce.swf
           genisoimage -quiet -J -r -o gamecd.iso gamecd
           python3 tools/qemu_test.py build/FlashOS.iso screenshots gamecd gamecd.iso
+          # sound: AC'97 recorded to WAV, plus JPEG / mask / text-field test
+          genisoimage -quiet -J -r -o testcd.iso tests
+          python3 tools/qemu_test.py build/FlashOS.iso screenshots audio testcd.iso audio.wav
+          python3 tools/analyse_audio.py audio.wav | tee audio-report.txt
           # networking: serve a SWF from the runner, guest reaches it at 10.0.2.2
           mkdir -p www && cp swf/flashlogo.swf www/netlogo.swf
           (cd www && python3 -m http.server 8000 >/dev/null 2>&1 &)
@@ -58,7 +62,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest build/FlashOS.iso screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png screenshots/hdd_03_no_install.png screenshots/net_01_net.png screenshots/net_02_get.png screenshots/net_03_web.png screenshots/net_04_play.png screenshots/net8139_02_get.png screenshots/gamecd_01_ls.png screenshots/gamecd_02_play.png \
+          {
+            echo "Bootable FlashOS ISO built from ${GITHUB_SHA::7}. Boot it in QEMU/VirtualBox (as a CD) or write it to a USB stick. Legacy BIOS boot."
+            echo
+            echo "Sound test (QEMU AC97 recording):"
+            echo '```'
+            cat audio-report.txt || true
+            echo '```'
+          } > notes.md
+          gh release create latest build/FlashOS.iso screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png screenshots/hdd_03_no_install.png screenshots/net_01_net.png screenshots/net_02_get.png screenshots/net_03_web.png screenshots/net_04_play.png screenshots/net8139_02_get.png screenshots/gamecd_01_ls.png screenshots/audio_01_vol.png screenshots/audio_02_features.png screenshots/gamecd_02_play.png \
             --title "FlashOS (latest build)" \
-            --notes "Bootable FlashOS ISO built from ${GITHUB_SHA::7}. Boot it in QEMU/VirtualBox (as a CD) or write it to a USB stick. Legacy BIOS boot." \
+            --notes-file notes.md \
             --latest

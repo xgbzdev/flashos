@@ -80,7 +80,7 @@ typedef struct { int w, h; u32 *px; } bitmap;
 
 typedef struct { u8 states; u16 id; s16 depth; mat m; cxf cx; } btnrec;
 typedef struct { u16 cond; const u8 *code; u32 len; } btnact;
-typedef struct { int nrec, nact; btnrec *rec; btnact *act; } button_def;
+typedef struct { int nrec, nact; btnrec *rec; btnact *act; u16 snd[4]; } button_def;
 
 typedef struct { int nglyph; shape **glyph; u16 *code; float em; } font_def;
 typedef struct { u16 font; u32 color; float x, y, height; int n; u16 *glyph; float *adv; } textrun;
@@ -92,9 +92,10 @@ typedef struct {
     u32 color;
     int align;
     const char *var, *init;
+    int maxlen;
 } etext_def;
 
-enum { CH_NONE, CH_SHAPE, CH_SPRITE, CH_BITMAP, CH_BUTTON, CH_FONT, CH_TEXT, CH_ETEXT };
+enum { CH_NONE, CH_SHAPE, CH_SPRITE, CH_BITMAP, CH_BUTTON, CH_FONT, CH_TEXT, CH_ETEXT, CH_SOUND };
 typedef struct { u8 type; void *p; const char *export_name; obj *klass; } chr;
 extern chr *chars;
 
@@ -182,6 +183,7 @@ void as_listeners(const char *which, const char *event); /* "Key" / "Mouse" */
 void as_intervals(void);
 void as_clip_constructed(inst *in);
 val as_get_var_path(inst *base, const char *path);
+void as_set_var_path(inst *base, const char *path, val v);
 const char *as_tostring(val v);
 void as_text_sync(inst *in);
 
@@ -221,3 +223,30 @@ cxf cx_mul(cxf p, cxf c);
 u32 cx_apply(const cxf *c, u32 col);
 
 #endif
+
+/* ---------------- images (image.c) ---------------- */
+bitmap *image_decode_tag(int code, const u8 *d, u32 n);
+void image_set_tables(const u8 *d, u32 n);
+
+/* ---------------- masks (render.c) ---------------- */
+u8 *mask_begin_write(int level);   /* clears and returns the mask buffer for a level */
+void mask_set_write(u8 *buf);      /* NULL: normal drawing */
+void mask_set_active(u8 *buf);     /* NULL: no clipping */
+u8 *mask_get_active(void);
+
+/* ---------------- text input (player.c) ---------------- */
+extern inst *text_focus;
+void text_set_focus(inst *in);
+
+/* ---------------- sound (player.c) ---------------- */
+typedef struct {
+    u8 format, rate, is16, stereo, tried;
+    u32 count, len;
+    const u8 *data;
+    short *pcm;
+    u32 frames;
+    int prate;
+} sound_def;
+int snd_play(u16 id, int loops, int vol, int tag);
+int snd_find(const char *link);
+u32 snd_duration_ms(u16 id);

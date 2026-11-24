@@ -26,6 +26,9 @@ elif mode == "install":   # CD + blank IDE disk + FAT USB stick
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-cdrom", iso, "-boot", "d",
              "-device", "qemu-xhci,id=xhci", "-drive", f"if=none,id=stick,format=raw,file={extra[1]}",
              "-device", "usb-storage,bus=xhci.0,drive=stick"]
+elif mode == "audio":    # boot CD + test CD, AC'97 recorded to a WAV file
+    media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3",
+             "-boot", "d", "-audiodev", f"wav,id=snd0,path={extra[1]}", "-device", "AC97,audiodev=snd0"]
 elif mode == "gamecd":   # boot CD + a second, data-only ISO with games
     media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3", "-boot", "d"]
 elif mode in ("net", "net8139"):
@@ -73,6 +76,33 @@ def type_text(t):
     for ch in t:
         cmd("sendkey " + KEYS.get(ch, ch))
 
+
+if mode == "audio":
+    time.sleep(10)
+    type_text("vol\n")
+    time.sleep(1.5)
+    shot("01_vol")
+    t0 = time.time()
+    type_text("soundtest\n")
+    time.sleep(3)
+    cmd("sendkey f12")
+    time.sleep(1.5)
+    t1 = time.time()
+    type_text("mp3stream\n")
+    time.sleep(4)
+    cmd("sendkey f12")
+    time.sleep(1.5)
+    type_text("features\n")
+    time.sleep(3)
+    cmd("sendkey f10")
+    time.sleep(0.3)
+    shot("02_features")
+    cmd("sendkey f12")
+    time.sleep(1)
+    print("TIMES", t0, t1)
+    cmd("quit")
+    qemu.wait(timeout=10)
+    sys.exit(0)
 
 if mode == "gamecd":
     time.sleep(10)

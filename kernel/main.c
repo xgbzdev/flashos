@@ -2,6 +2,7 @@
  * Copyright (c) 2026 FlashOS. All rights reserved.
  */
 #include "kernel.h"
+#include "audio.h"
 void render_init(void);
 
 static const char *LOGO[] = {
@@ -83,7 +84,8 @@ static void cmd_help(void) {
              "  CLS              clear the screen\n"
              "  ABOUT            about FlashOS\n"
              "  MEM              show installed RAM\n"
-             "  RESCAN           read game CDs / ISO images again\n");
+             "  RESCAN           read game CDs / ISO images again\n"
+             "  VOL [0-100|MUTE] sound volume (F9/F10/F11 while playing)\n");
     if (!installed()) con_puts("  INSTALL          install FlashOS on the hard disk\n");
     con_puts(
              "  NET              connect to the wired network\n"
@@ -375,6 +377,20 @@ static void cmd_get(const char *url) {
     con_puts(" to play it.\n");
 }
 
+static void cmd_vol(const char *arg) {
+    if (*arg) {
+        int v = 0;
+        for (const char *p = arg; *p >= '0' && *p <= '9'; p++) v = v * 10 + (*p - '0');
+        if (!kstricmp(arg, "mute") || !kstricmp(arg, "off")) audio_set_muted(1);
+        else { audio_set_muted(0); audio_set_master(v > 100 ? 256 : v * 256 / 100); }
+    }
+    con_puts("\n Volume: ");
+    if (audio_get_muted()) con_puts("muted");
+    else { put_num((u32)(audio_get_master() * 100 + 128) / 256); con_putc('%'); }
+    con_puts(audio_init() ? "   (sound card: AC'97)" : "   (no AC'97 sound card found)");
+    con_puts("\n While a SWF plays: F9 mute, F10 quieter, F11 louder.\n");
+}
+
 static void handle(char *line) {
     while (*line == ' ') line++;
     u32 n = kstrlen(line);
@@ -402,6 +418,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "install") && !installed()) cmd_install();
     else if (!kstricmp(line, "usbdiag")) cmd_usbdiag();
     else if (!kstricmp(line, "net")) cmd_net();
+    else if (!kstricmp(line, "vol") || !kstricmp(line, "volume")) cmd_vol(arg);
     else if (!kstricmp(line, "rescan")) {
         con_puts("\n Reading CD drives...");
         int n = cd_scan();

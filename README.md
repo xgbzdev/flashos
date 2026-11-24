@@ -4,8 +4,10 @@
 terminal and can only run `.swf` (Flash) files.
 
 It runs on **FlashKernel**, its own proprietary kernel written from scratch.
-There's no Linux, BusyBox or GRUB, and no third-party code. Everything from
-the boot sector up is in this repository.
+There's no Linux, BusyBox or GRUB. Everything from the boot sector up is in
+this repository. The only outside code is the MP3 decoder
+([minimp3](https://github.com/lieff/minimp3), public domain / CC0, so it can be
+used without any conditions).
 
 ```
  ___ _         _    ___  ___
@@ -35,6 +37,7 @@ appears.
 | `MEM`              | show how much RAM is installed                 |
 | `INSTALL`          | install FlashOS on the hard disk (only when started from the ISO) |
 | `RESCAN`           | read game CDs / ISO images again               |
+| `VOL [0-100/MUTE]` | sound volume                                   |
 | `NET`              | connect to the wired network, show IP / status |
 | `PING <host>`      | test the connection                            |
 | `GET <http://url>` | download a SWF from the internet               |
@@ -45,7 +48,9 @@ appears.
 Anything that isn't a real SWF file is refused with **ACCESS DENIED**. FlashOS
 checks the file extension and also the file's header (`FWS`/`CWS`/`ZWS`).
 
-While a movie plays, **F12** or **Ctrl+Q** returns to the prompt. Esc also works
+While a movie plays, **F12** or **Ctrl+Q** returns to the prompt, and
+**F9** mutes, **F10** turns the volume down and **F11** turns it up (with a
+pixel volume bar on screen). Esc also works
 for plain animations; in ActionScript games Esc goes to the game.
 
 ## Games on USB sticks and extra disks
@@ -108,8 +113,16 @@ FlashKernel has its own SWF player:
 * the timeline, sprites (movie clips) with their own timelines, colour effects
 * lossless bitmaps, and compressed `CWS` files (FlashKernel's own zlib decoder)
 * the movie is scaled to fit the screen
-* text: static text drawn from the movie's own fonts, and dynamic text fields
-  drawn in the PC's pixel font
+* images: JPEG (baseline), PNG and GIF, with transparency, and lossless bitmaps
+* masks (nested too)
+* text: static text drawn from the movie's own fonts, and dynamic and input
+  text fields drawn in the PC's pixel font. Click a text box to type into it.
+* **sound** through an Intel AC'97 sound card: MP3, ADPCM and uncompressed
+  sound, event sounds, music streamed with the animation, button sounds and the
+  `Sound` object (`attachSound`, `start`, `stop`, `setVolume`)
+
+In VirtualBox turn sound on in *Settings → Audio* and pick **ICH AC97** as the
+controller.
 
 ### ActionScript 1.0 / 2.0
 
@@ -140,8 +153,9 @@ games):
 When a movie uses ActionScript, FlashOS shows its own **pixelated black mouse
 cursor** with a white outline. It turns into a pixel **hand** over buttons.
 
-Not supported yet: ActionScript 3 (Flash 9+), JPEG images, sound, masks,
-filters, morph shapes, typing into input text fields, and LZMA-compressed `ZWS` files.
+Not supported yet: ActionScript 3 (Flash 9+), progressive JPEGs, filters
+(blur, glow…), morph shapes, Nellymoser/Speex sound, Intel HD Audio sound cards,
+and LZMA-compressed `ZWS` files.
 
 ## Build
 
@@ -189,6 +203,9 @@ kernel/player.c     SWF timeline, display tree, buttons, mouse/key events
 kernel/avm1.c       ActionScript 1.0/2.0 virtual machine and built-in classes
 kernel/ata.c        IDE disk driver (INSTALL)
 kernel/net.c        network drivers and DHCP / DNS / TCP / HTTP
+kernel/cdfs.c       game CDs: ISO 9660 / Joliet reader
+kernel/audio.c      AC'97 driver, mixer, ADPCM; MP3 through minimp3.h
+kernel/image.c      JPEG, PNG and GIF decoders
 tools/mkiso.py      writes the ISO 9660 + El Torito + MBR hybrid image
 tools/mkfs.py       packs files into FlashFS
 tools/make_demo_swf.py  builds the demo movies (it includes a small AVM1

@@ -2,6 +2,7 @@
  * Copyright (c) 2026 FlashOS. All rights reserved.
  */
 #include "swf.h"
+#include "audio.h"
 
 /* ================================================================ math */
 #ifdef HOSTED
@@ -782,6 +783,14 @@ val as_get_var_path(inst *base, const char *path) {
     return get_var(&c, path);
 }
 
+void as_set_var_path(inst *base, const char *path, val v) {
+    ctx c;
+    memset(&c, 0, sizeof c);
+    c.target = c.orig = base ? base : root;
+    c.thisv = vobj(as_clip_obj(c.target));
+    set_var(&c, path, v);
+}
+
 void as_text_sync(inst *in) {
     if (!in->et || !in->et->var || !*in->et->var) return;
     inst *base = in->parent ? in->parent : root;
@@ -1212,7 +1221,8 @@ static val run_code(ctx *c, const u8 *code, u32 len) {
         case 0x05: inst_goto(c->target, c->target ? c->target->frame - 1 : 1, 0); break;
         case 0x06: if (c->target) c->target->playing = 1; break;
         case 0x07: if (c->target) c->target->playing = 0; break;
-        case 0x08: case 0x09: break;
+        case 0x08: break;
+        case 0x09: audio_stop_all(); break;
         case 0x0A: y = pop(); x = pop(); push(vnum(to_num(x) + to_num(y))); break;
         case 0x0B: y = pop(); x = pop(); push(vnum(to_num(x) - to_num(y))); break;
         case 0x0C: y = pop(); x = pop(); push(vnum(to_num(x) * to_num(y))); break;
@@ -2355,6 +2365,61 @@ static val nf_getTransform(ctx *c, val th, val *a, int n) {
     return vobj(o);
 }
 
+/* Selection (keyboard focus for text fields) */
+static val nf_setFocus(ctx *c, val th, val *a, int n) {
+    (void)th;
+    inst *t = n ? target_of(c, a[0]) : NULL;
+    text_set_focus(t);
+    return vbool(t != NULL);
+}
+static val nf_getFocus(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th; (void)a; (void)n;
+    return text_focus ? vstr(clip_path(text_focus, 0)) : vobj(NULL);
+}
+
+/* Sound */
+static int snd_tag(val th) { return th.t == V_OBJ ? (int)((u32)(unsigned long)th.u.o & 0x7FFFFFFF) : 0; }
+static int snd_vol(val th) {
+    prop *p = th.t == V_OBJ ? own_prop(th.u.o, "_vol") : NULL;
+    return p ? to_i32(p->v) : 100;
+}
+static val nf_attachSound(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    int id = snd_find(as_tostring(ARG(0)));
+    set_hidden(th.u.o, "_snd", vnum(id));
+    if (id >= 0) set_hidden(th.u.o, "duration", vnum(snd_duration_ms((u16)id)));
+    return vundef();
+}
+static val nf_sndStart(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    prop *p = own_prop(th.u.o, "_snd");
+    if (!p || to_i32(p->v) < 0) return vundef();
+    int loops = n > 1 ? to_i32(a[1]) : 1;
+    snd_play((u16)to_i32(p->v), loops < 1 ? 1 : loops, snd_vol(th) * 256 / 100, snd_tag(th));
+    return vundef();
+}
+static val nf_sndStop(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (n && a[0].t == V_STR) { int id = snd_find(a[0].u.s); if (id >= 0) audio_stop_sound(id); return vundef(); }
+    prop *p = th.t == V_OBJ ? own_prop(th.u.o, "_snd") : NULL;
+    if (p) audio_stop_tag(snd_tag(th));
+    else audio_stop_all();
+    return vundef();
+}
+static val nf_setVolume(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    int v = to_i32(ARG(0));
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    set_hidden(th.u.o, "_vol", vnum(v));
+    audio_set_volume(snd_tag(th), v * 256 / 100);
+    return vundef();
+}
+static val nf_getVolume(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; return vnum(snd_vol(th)); }
+
 /* Date */
 static int days_from_civil(int y, int m, int d) {
     y -= m <= 2;
@@ -2617,17 +2682,27 @@ void as_init(void) {
     def_native(text_proto, "swapDepths", nf_swapDepths);
     mk_class("TextFormat", nf_Object, NULL);
 
+    obj *selection = new_obj(obj_proto);
+    selection->captured = 1;
+    set_hidden(G, "Selection", vobj(selection));
+    def_native(selection, "setFocus", nf_setFocus);
+    def_native(selection, "getFocus", nf_getFocus);
+    def_native(selection, "setSelection", nf_noop);
+    def_native(selection, "getBeginIndex", nf_noop);
+    def_native(selection, "getEndIndex", nf_noop);
+    def_native(selection, "getCaretIndex", nf_noop);
+
     mk_class("Color", nf_Color, &color_proto);
     def_native(color_proto, "setRGB", nf_setRGB);
     def_native(color_proto, "getRGB", nf_getRGB);
     def_native(color_proto, "setTransform", nf_setTransform);
     def_native(color_proto, "getTransform", nf_getTransform);
     mk_class("Sound", nf_Object, &sound_proto);
-    def_native(sound_proto, "attachSound", nf_noop);
-    def_native(sound_proto, "start", nf_noop);
-    def_native(sound_proto, "stop", nf_noop);
-    def_native(sound_proto, "setVolume", nf_noop);
-    def_native(sound_proto, "getVolume", nf_noop);
+    def_native(sound_proto, "attachSound", nf_attachSound);
+    def_native(sound_proto, "start", nf_sndStart);
+    def_native(sound_proto, "stop", nf_sndStop);
+    def_native(sound_proto, "setVolume", nf_setVolume);
+    def_native(sound_proto, "getVolume", nf_getVolume);
     def_native(sound_proto, "setPan", nf_noop);
     def_native(sound_proto, "loadSound", nf_noop);
     mk_class("Date", nf_Date, &date_proto);

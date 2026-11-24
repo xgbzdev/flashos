@@ -376,6 +376,20 @@ static u16 cov[4096];
 static float xs[8192];
 static int ws[8192];
 
+/* masks: 8-bit coverage planes; drawing is multiplied by the active one */
+#define MASK_LEVELS 4
+static u8 *mask_bufs[MASK_LEVELS];
+static u8 *mask_write, *mask_active;
+u8 *mask_begin_write(int level) {
+    if (level < 0 || level >= MASK_LEVELS) return NULL;
+    if (!mask_bufs[level]) mask_bufs[level] = kmalloc((u32)scr_w * scr_h);
+    if (mask_bufs[level]) memset(mask_bufs[level], 0, (u32)scr_w * scr_h);
+    return mask_bufs[level];
+}
+void mask_set_write(u8 *buf) { mask_write = buf; }
+void mask_set_active(u8 *buf) { mask_active = buf; }
+u8 *mask_get_active(void) { return mask_active; }
+
 void render_init(void) {
     if (RE) return;
     RE_cap = 131072;
@@ -509,11 +523,26 @@ static void raster(int n, int nonzero, paint *p) {
         }
         if (maxx >= scr_w) maxx = scr_w - 1;
         u32 *row = bb + y * scr_w;
+        const u8 *am = mask_active ? mask_active + y * scr_w : NULL;
+        if (mask_write) { /* building a mask: record coverage instead of colour */
+            u8 *mw = mask_write + y * scr_w;
+            for (int x = minx; x <= maxx; x++) {
+                u32 c = cov[x];
+                if (!c) continue;
+                cov[x] = 0;
+                if (c > 256) c = 256;
+                u32 v = c * 255 / 256;
+                if (am) v = v * am[x] / 255;
+                if (v > mw[x]) mw[x] = (u8)v;
+            }
+            continue;
+        }
         for (int x = minx; x <= maxx; x++) {
             u32 c = cov[x];
             if (!c) continue;
             cov[x] = 0;
             if (c > 256) c = 256;
+            if (am) { c = c * am[x] / 255; if (!c) continue; }
             blend(&row[x], p->type == P_SOLID ? p->col : paint_at(p, x, y), c);
         }
     }
@@ -672,8 +701,13 @@ void draw_bitmap_text(const char *s, mat m, float x, float y, float h, u32 color
                     if (x1 == x0) x1 = x0 + 1;
                     for (int yy = y0; yy < y1; yy++) {
                         if (yy < 0 || yy >= scr_h || yy >= maxy + 1) continue;
-                        for (int xx = x0; xx < x1; xx++)
-                            if (xx >= 0 && xx < scr_w && xx <= maxx + 1) blend(&bb[yy * scr_w + xx], color, 256);
+                        for (int xx = x0; xx < x1; xx++) {
+                            if (xx < 0 || xx >= scr_w || xx > maxx + 1) continue;
+                            u32 a = 256, idx = (u32)(yy * scr_w + xx);
+                            if (mask_active) { a = mask_active[idx] * 256u / 255; if (!a) continue; }
+                            if (mask_write) { if (a > 255) a = 255; if (a > mask_write[idx]) mask_write[idx] = (u8)a; continue; }
+                            blend(&bb[idx], color, a);
+                        }
                     }
                 }
             }

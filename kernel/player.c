@@ -2,6 +2,7 @@
  * Copyright (c) 2026 FlashOS. All rights reserved.
  */
 #include "swf.h"
+#include "audio.h"
 
 chr *chars;
 inst *root;
@@ -234,13 +235,58 @@ static void define_etext(u16 id, const u8 *b, u32 len) {
     if (e->flags & 0x0080) rstr(&r);                         /* HasFontClass */
     if (e->flags & 0x0100) e->height = (float)r16(&r);
     if (e->flags & 0x0400) e->color = rrgba(&r);             /* HasTextColor */
-    if (e->flags & 0x0200) r16(&r);                          /* HasMaxLength */
+    if (e->flags & 0x0200) e->maxlen = (int)r16(&r);         /* HasMaxLength */
     if (e->flags & 0x0020) { e->align = (int)r8(&r); r16(&r); r16(&r); r16(&r); r16(&r); }
     e->var = rstr(&r);
     if (e->flags & 0x8000) e->init = rstr(&r);              /* HasText */
     chars[id].type = CH_ETEXT;
     chars[id].p = e;
 }
+
+/* ---------------------------------------------------------------- sound */
+void *audio_alloc(u32 n) { return amalloc(n); }
+
+static sound_def *sound_ready(u16 id) {
+    if (chars[id].type != CH_SOUND) return NULL;
+    sound_def *sd = chars[id].p;
+    if (!sd->tried) {
+        sd->tried = 1;
+        u32 fr = 0;
+        int rate = 0;
+        sd->pcm = audio_decode(sd->format, sd->rate, sd->is16, sd->stereo, sd->count, sd->data, sd->len, &fr, &rate);
+        sd->frames = fr;
+        sd->prate = rate;
+    }
+    return sd->pcm ? sd : NULL;
+}
+int snd_play(u16 id, int loops, int vol, int tag) {
+    sound_def *sd = sound_ready(id);
+    return sd ? audio_play(sd->pcm, sd->frames, sd->prate, loops, vol, tag, id) : -1;
+}
+int snd_find(const char *link) {
+    for (int i = 0; i < 65536; i++)
+        if (chars[i].type == CH_SOUND && chars[i].export_name && !kstricmp(chars[i].export_name, link)) return i;
+    return -1;
+}
+u32 snd_duration_ms(u16 id) {
+    sound_def *sd = sound_ready(id);
+    return sd && sd->prate ? (u32)((sd->frames / (u32)sd->prate) * 1000 + (sd->frames % (u32)sd->prate) * 1000 / (u32)sd->prate) : 0;
+}
+
+/* SOUNDINFO record (StartSound, button sounds) */
+static void sound_info_play(u16 id, rd *r) {
+    u32 f = r8(r);
+    int loops = 1;
+    if (f & 1) r32(r);
+    if (f & 2) r32(r);
+    if (f & 4) loops = (int)r16(r);
+    if (f & 8) { u32 n = r8(r); r->i += n * 8; }
+    if (f & 0x20) { audio_stop_sound(id); return; }          /* SyncStop */
+    if ((f & 0x10) && audio_playing(id)) return;               /* SyncNoMultiple */
+    snd_play(id, loops, 256, 0);
+}
+
+static int stream_fmt = -1, stream_rate, stream_16, stream_stereo;
 
 static void define(u32 code, const u8 *b, u32 len) {
     if (len < 2) return;
@@ -261,7 +307,7 @@ static void define(u32 code, const u8 *b, u32 len) {
         }
         break;
     case 20: case 36: chars[id].type = CH_BITMAP; chars[id].p = parse_lossless(d, dl, code == 36); break;
-    case 6: case 21: case 35: case 90: chars[id].type = CH_BITMAP; chars[id].p = NULL; break;
+    case 6: case 21: case 35: case 90: chars[id].type = CH_BITMAP; chars[id].p = image_decode_tag((int)code, d, dl); break;
     case 7: define_button(id, d, dl, 0); break;
     case 34: define_button(id, d, dl, 1); break;
     case 10: define_font(id, d, dl, 1); break;
@@ -270,6 +316,21 @@ static void define(u32 code, const u8 *b, u32 len) {
     case 11: define_text(id, d, dl, 0); break;
     case 33: define_text(id, d, dl, 1); break;
     case 37: define_etext(id, d, dl); break;
+    case 14: { /* DefineSound */
+        if (dl < 5) break;
+        sound_def *sd = amalloc(sizeof *sd);
+        u8 fl = d[0];
+        sd->format = (u8)(fl >> 4);
+        sd->rate = (u8)((fl >> 2) & 3);
+        sd->is16 = (u8)((fl >> 1) & 1);
+        sd->stereo = (u8)(fl & 1);
+        sd->count = d[1] | (d[2] << 8) | (d[3] << 16) | ((u32)d[4] << 24);
+        sd->data = d + 5;
+        sd->len = dl - 5;
+        chars[id].type = CH_SOUND;
+        chars[id].p = sd;
+        break;
+    }
     }
 }
 
@@ -553,6 +614,39 @@ static void tl_step(inst *in) {
             }
             break;
         }
+        case 15: if (l >= 2) { rd r; rinit(&r, b + 2, l - 2); sound_info_play((u16)(b[0] | (b[1] << 8)), &r); } break;
+        case 89: { int id = snd_find((const char *)b); if (id >= 0) snd_play((u16)id, 1, 256, 0); break; }
+        case 17: /* DefineButtonSound */
+            if (l >= 2 && chars[b[0] | (b[1] << 8)].type == CH_BUTTON) {
+                button_def *bd = chars[b[0] | (b[1] << 8)].p;
+                rd r;
+                rinit(&r, b + 2, l - 2);
+                for (int k = 0; k < 4 && r.i + 2 <= r.n; k++) {
+                    bd->snd[k] = (u16)r16(&r);
+                    if (bd->snd[k]) { u32 f = r8(&r); if (f & 1) r32(&r); if (f & 2) r32(&r); if (f & 4) r16(&r); if (f & 8) r.i += r8(&r) * 8u; }
+                }
+            }
+            break;
+        case 18: case 45: /* SoundStreamHead */
+            if (l >= 4) {
+                stream_fmt = b[1] >> 4;
+                stream_rate = (b[1] >> 2) & 3;
+                stream_16 = (b[1] >> 1) & 1;
+                stream_stereo = b[1] & 1;
+                if (stream_fmt == 2) audio_stream_mp3_reset();
+            }
+            break;
+        case 19: /* SoundStreamBlock */
+            if (!steps_actions || stream_fmt < 0) break;
+            if (stream_fmt == 2 && l > 4) audio_stream_mp3(b + 4, l - 4);
+            else if (stream_fmt != 2) {
+                u32 fr = 0;
+                int rate = 0;
+                short *pcm = audio_decode(stream_fmt, stream_rate, stream_16, stream_stereo, 4096, b, l, &fr, &rate);
+                if (pcm) audio_stream_push(pcm, fr, rate);
+            }
+            break;
+        case 8: image_set_tables(b, l); break; /* JPEGTables */
         case 9: if (l >= 3) bg_color = 0xFF000000u | (b[0] << 16) | (b[1] << 8) | b[2]; break;
         case 56: { /* ExportAssets */
             rd r;
@@ -755,6 +849,7 @@ void shape_from_dyn(dyndraw *d) {
 
 /* ---------------------------------------------------------------- rendering */
 static void render_node(inst *in, mat pm, cxf pc);
+static void render_kids(inst *in, mat m, cxf c);
 
 static void render_text(text_def *td, mat m, const cxf *cx) {
     mat tm = mat_mul(m, td->m);
@@ -787,8 +882,23 @@ static void render_node(inst *in, mat pm, cxf pc) {
     case K_ETEXT: {
         etext_def *e = in->et;
         as_text_sync(in);
-        if (in->text && *in->text)
-            draw_bitmap_text(in->text, m, (float)e->bounds[0] + 40, (float)e->bounds[2] + 40, e->height,
+        if (e->flags & 0x0008) { /* border: white box with a black frame */
+            int x0 = (int)(m.a * e->bounds[0] + m.tx), y0 = (int)(m.d * e->bounds[2] + m.ty);
+            int x1 = (int)(m.a * e->bounds[1] + m.tx), y1 = (int)(m.d * e->bounds[3] + m.ty);
+            if (!mask_get_active()) {
+                video_fill(x0, y0, x1 - x0, y1 - y0, 0xFF000000u);
+                video_fill(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2, 0xFFFFFFFFu);
+            }
+        }
+        const char *t = in->text ? in->text : "";
+        static char shown[1024];
+        u32 n = kstrlen(t);
+        if (n > 1000) n = 1000;
+        for (u32 i = 0; i < n; i++) shown[i] = (e->flags & 0x1000) ? '*' : t[i]; /* password */
+        shown[n] = 0;
+        if (in == text_focus && (plat_ms() / 500) % 2 == 0) { shown[n] = '_'; shown[n + 1] = 0; }
+        if (*shown)
+            draw_bitmap_text(shown, m, (float)e->bounds[0] + 40, (float)e->bounds[2] + 40, e->height,
                              cx_apply(&c, e->color), (float)(e->bounds[1] - e->bounds[0] - 40),
                              (float)(e->bounds[3] - e->bounds[2]), e->align);
         break;
@@ -809,9 +919,41 @@ static void render_node(inst *in, mat pm, cxf pc) {
     }
     case K_SPRITE:
         if (in->dyn) { shape_from_dyn(in->dyn); if (in->dyn->built) draw_shape(in->dyn->built, m, &c, 0); }
-        for (int i = 0; i < in->n; i++) render_node(in->kids[i], m, c);
+        render_kids(in, m, c);
         break;
     }
+}
+
+/* children in depth order; a child with clipdepth is a mask for the
+ * children above it up to that depth */
+static int mask_level;
+static void render_kids(inst *in, mat m, cxf c) {
+    u8 *outer = mask_get_active();
+    int limit = -100000; /* depth up to which the current mask applies */
+    u8 *cur = NULL;
+    for (int i = 0; i < in->n; i++) {
+        inst *k = in->kids[i];
+        if (cur && k->depth > limit) { mask_set_active(outer); cur = NULL; mask_level--; }
+        if (k->clipdepth) {
+            if (k->dead || !k->visible) continue;
+            if (cur) { mask_set_active(outer); cur = NULL; mask_level--; }
+            u8 *buf = mask_begin_write(mask_level);
+            if (!buf) continue; /* too many nested masks: draw unmasked */
+            mask_level++;
+            mask_set_write(buf);
+            u16 cd = k->clipdepth;
+            k->clipdepth = 0;
+            render_node(k, m, c);
+            k->clipdepth = cd;
+            mask_set_write(NULL);
+            mask_set_active(buf);
+            cur = buf;
+            limit = (int)cd - 16384;
+            continue;
+        }
+        render_node(k, m, c);
+    }
+    if (cur) { mask_set_active(outer); mask_level--; }
 }
 
 /* ---------------------------------------------------------------- tree walk */
@@ -883,6 +1025,8 @@ static void fire(inst *t, u16 cond, u32 clipflag, const char *handler) {
     if (!t || t->dead) return;
     if (t->kind == K_BUTTON) {
         button_def *bd = chars[t->id].p;
+        int si = cond == 0x02 ? 0 : cond == 0x01 ? 1 : cond == 0x04 ? 2 : cond == 0x08 ? 3 : -1;
+        if (si >= 0 && bd->snd[si]) snd_play(bd->snd[si], 1, 256, 0);
         for (int i = 0; i < bd->nact; i++)
             if (bd->act[i].cond & cond) as_run(bd->act[i].code, bd->act[i].len, t->parent);
     } else {
@@ -942,13 +1086,89 @@ static int btn_key(int code, int ascii) {
 
 static int sx_mouse, sy_mouse;
 
+inst *text_focus;
+void text_set_focus(inst *in) { text_focus = (in && in->kind == K_ETEXT && !(in->et->flags & 0x0800)) ? in : NULL; }
+
+static void text_store(inst *in) {
+    if (in->et->var && *in->et->var) {
+        /* keep the bound variable in step with what was typed */
+        val v = vstr(in->text);
+        obj *po = as_clip_obj(in->parent ? in->parent : root);
+        (void)po;
+        as_set_var_path(in->parent ? in->parent : root, in->et->var, v);
+    }
+}
+
+static void text_type(int code, int ascii) {
+    inst *t = text_focus;
+    if (!t || t->dead) { text_focus = NULL; return; }
+    u32 n = t->text ? kstrlen(t->text) : 0;
+    char *nt = amalloc(n + 2);
+    if (!nt) return;
+    if (n) memcpy(nt, t->text, n);
+    if (code == 8) { if (n) n--; }
+    else if (code == 13) { if (t->et->flags & 0x2000) nt[n++] = '\n'; else return; }
+    else if (ascii >= 32 && ascii < 127) { if (t->et->maxlen && (int)n >= t->et->maxlen) return; nt[n++] = (char)ascii; }
+    else return;
+    nt[n] = 0;
+    t->text = nt;
+    text_store(t);
+}
+
+/* topmost editable text field under the mouse */
+static inst *text_hit(inst *in, mat m, float x, float y) {
+    if (in->dead || !in->visible) return NULL;
+    if (in->kind == K_ETEXT) return (!(in->et->flags & 0x0800) && hit_rec(in, m, x, y, 0)) ? in : NULL;
+    if (in->kind != K_SPRITE) return NULL;
+    for (int i = in->n - 1; i >= 0; i--) {
+        inst *r = text_hit(in->kids[i], mat_mul(m, in->kids[i]->m), x, y);
+        if (r) return r;
+    }
+    return NULL;
+}
+
+/* ---- volume keys: F9 mute, F10 down, F11 up, with a pixel volume bar ---- */
+static u32 osd_until;
+static int osd_shown;
+static void draw_volume_osd(void) {
+    int v = audio_get_master(), muted = audio_get_muted();
+    int x = scr_w - 260, y = 20;
+    video_fb_rect(x - 6, y - 6, 252, 44, 0xFF000000u);
+    video_fb_rect(x - 4, y - 4, 248, 40, 0xFFFF2020u);
+    video_fb_rect(x - 2, y - 2, 244, 36, 0xFF000000u);
+    /* speaker */
+    video_fb_rect(x + 4, y + 10, 8, 12, 0xFFFF2020u);
+    for (int i = 0; i < 8; i++) video_fb_rect(x + 12 + i, y + 10 - i, 1, 12 + i * 2, 0xFFFF2020u);
+    if (muted) for (int i = 0; i < 12; i++) { video_fb_rect(x + 24 + i, y + 10 + i, 3, 3, 0xFFFFFFFFu); video_fb_rect(x + 35 - i, y + 10 + i, 3, 3, 0xFFFFFFFFu); }
+    for (int i = 0; i < 10; i++) {
+        int on = !muted && v * 10 >= (i + 1) * 256 - 128;
+        video_fb_rect(x + 48 + i * 18, y + 4, 14, 24, on ? 0xFFFF2020u : 0xFF401010u);
+    }
+    osd_until = plat_ms() + 1500;
+    osd_shown = 1;
+}
+static void osd_tick(void) {
+    if (osd_shown && (s32)(plat_ms() - osd_until) > 0) { video_present(scr_w - 266, 14, 266, 46); osd_shown = 0; }
+}
+static void draw_volume_osd_keep(void) { u32 t = osd_until; draw_volume_osd(); osd_until = t; }
+static int volume_key(int code) {
+    if (code == 120) audio_set_muted(!audio_get_muted());
+    else if (code == 121) { audio_set_muted(0); audio_set_master(audio_get_master() - 26); }
+    else if (code == 122) { audio_set_muted(0); audio_set_master(audio_get_master() + 26); }
+    else return 0;
+    draw_volume_osd();
+    return 1;
+}
+
 static void handle_input(void) {
     int code, down, ascii;
     while (plat_kevent(&code, &down, &ascii)) {
+        if (code >= 120 && code <= 122) { if (down) volume_key(code); continue; }
         if (down && (code == FK_F12 || (code == 81 && plat_kdown(17)) || (code == 27 && !interactive))) {
             quit_requested = 1;
             return;
         }
+        if (down && text_focus) text_type(code, ascii);
         if (down) {
             last_key_code = code;
             last_key_ascii = ascii;
@@ -1002,6 +1222,7 @@ static void handle_input(void) {
     int is_down = mb & 1;
     if (is_down && !mouse_down) {
         mouse_down = 1;
+        text_set_focus(text_hit(root, MAT_ID, tx, ty));
         all_clips(0x10, "onMouseDown", 0);
         as_listeners("Mouse", "onMouseDown");
         if (hot) { pressed = hot; fire(hot, 0x04, 0x0400, "onPress"); }
@@ -1098,6 +1319,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         interactive = 0;
         mouse_visible = 1;
         hot = pressed = drag = NULL;
+        text_focus = NULL;
         mouse_down = 0;
         last_mx = last_my = -1;
         flat = NULL;
@@ -1115,6 +1337,9 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         base = b;
 
         timeline *tl = make_timeline(swf + 8 + r.i, total - 8 - r.i);
+        audio_init();
+        audio_stop_all();
+        stream_fmt = -1;
         as_init();
         root = inst_alloc();
         root->kind = K_SPRITE;
@@ -1143,9 +1368,14 @@ int swf_play(const u8 *data, u32 size, const char **err) {
             render_node(root, base, CX_ID);
             erase_cursor();
             video_present(vx, vy, vw, vh);
+            audio_pump();
+            if (osd_shown) draw_volume_osd_keep();
             int show = interactive && mouse_visible;
             if (show) draw_cursor(sx_mouse, sy_mouse, hot && hot->hand);
-            while (plat_ms() - t0 < frame_ms && !quit_requested) {
+            /* streamed music sets the pace, like Flash: if the music is about
+             * to run dry, play the next frame now instead of waiting */
+            int hurry = stream_fmt >= 0 && audio_stream_queued() < (u32)audio_rate() / 4;
+            while (!hurry && plat_ms() - t0 < frame_ms && !quit_requested) {
                 int mx, my, mb;
                 plat_mouse(&mx, &my, &mb);
                 if (show && (mx != sx_mouse || my != sy_mouse)) {
@@ -1154,11 +1384,14 @@ int swf_play(const u8 *data, u32 size, const char **err) {
                     draw_cursor(mx, my, hot && hot->hand);
                 }
                 if (plat_kdown(FK_F12)) quit_requested = 1;
+                audio_pump();
+                osd_tick();
             }
         }
         erase_cursor();
     }
 out:
+    audio_halt();
     plat_flush_input();
     a_base = a_top = a_end = NULL;
     heap_reset(mark);
