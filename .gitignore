@@ -1,4 +1,3 @@
-output/
-buildroot/
-dl-flashos/
-dist/
+build/
+screenshots/
+__pycache__/

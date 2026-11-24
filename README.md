@@ -1,7 +1,11 @@
 # FlashOS
 
-A tiny Linux distribution that boots straight into a red retro terminal and
-**can only run `.swf` (Flash) files**.
+**FlashOS** is an operating system that boots straight into a red retro
+terminal and can only run `.swf` (Flash) files.
+
+It runs on **FlashKernel**, its own proprietary kernel written from scratch.
+There's no Linux, BusyBox or GRUB, and no third-party code. Everything from
+the boot sector up is in this repository.
 
 ```
  ___ _         _    ___  ___
@@ -11,77 +15,84 @@ A tiny Linux distribution that boots straight into a red retro terminal and
 Welcome to FlashOS,Insert An Command,
 
 
- > _
+
+>_
 ```
 
-## How it works
+## Boot animation
 
-| Layer        | What                                                             |
-|--------------|------------------------------------------------------------------|
-| Kernel       | Mainline Linux, no Tux logo, big Terminus 16x32 console font     |
-| Userland     | BusyBox (init, mount, sh for scripts only); built with Buildroot |
-| Shell        | `flashsh`: the only program on tty1; it shows the boot animation and the prompt |
-| Player       | [Ruffle](https://ruffle.rs) (Flash Player emulator) on a bare Xorg + Mesa |
-| Window mgr   | `flashwm`: forces the SWF fullscreen; **F12 / Ctrl+Q** quits back to the prompt |
-
-**Boot animation:** the logo loads like an old PC drawing an image: each
-scanline fills in left-to-right behind a solid beam, top to bottom, while a
-`LOADING FLASHOS.IMG [####....]` bar counts up. The screen flickers like a CRT
-settling, then the welcome line types itself out.
-
-**SWF only:** `flashsh` refuses anything that isn't a `.swf` file whose header
-is really `FWS`/`CWS`/`ZWS`. There is no general shell. `flash-run` checks the
-extension again before starting Ruffle.
+The screen goes black, then the logo and welcome line are drawn **one pixel row
+at a time, from the top down**, like an old PC slowly painting an image while
+loading it. There are short pauses as each "disk block" arrives. Then the prompt
+appears.
 
 ## Commands
 
-| Command            | Action                                       |
-|--------------------|----------------------------------------------|
-| `LS`               | list SWF files (`/swf` and USB drives)       |
-| `RUN <name or #>`  | play a SWF (or just type `game.swf`)         |
-| `USB`              | rescan USB sticks                            |
-| `CLS`, `ABOUT`, `HELP`, `REBOOT`, `SHUTDOWN` | the usual          |
+| Command            | What it does                                  |
+|--------------------|-----------------------------------------------|
+| `LS`               | list files                                    |
+| `RUN <name or #>`  | play a SWF (or just type `game.swf` / `game`) |
+| `CLS`, `ABOUT`, `HELP`, `REBOOT`, `SHUTDOWN` | the usual           |
+
+Anything that isn't a real SWF file is refused with **ACCESS DENIED**. FlashOS
+checks the file extension and also the file's header (`FWS`/`CWS`/`ZWS`). While a
+movie plays, **Esc**, **F12** or **Ctrl+Q** returns to the prompt.
+
+## The built-in Flash player
+
+FlashKernel has its own SWF player:
+
+* vector shapes with straight and curved edges, anti-aliased
+* solid, linear-gradient, radial-gradient and bitmap fills, transparency, outlines
+* the timeline, sprites (movie clips) with their own timelines, colour effects
+* lossless bitmaps, and compressed `CWS` files (FlashKernel's own zlib decoder)
+* the movie is scaled to fit the screen
+
+Not supported yet: ActionScript (no interactivity), text and fonts, JPEG images,
+sound, masks, morph shapes, and LZMA-compressed `ZWS` files.
 
 ## Build
 
-On a Debian/Ubuntu machine (around 10 GB free disk; the first build takes 30–90 min):
+You need `nasm`, `gcc` with 32-bit support, `make` and `python3`:
 
 ```sh
-sudo apt install build-essential git curl wget cpio unzip rsync bc file \
-                 python3 libncurses-dev libelf-dev syslinux-utils qemu-system-x86
-./build.sh
-./run-qemu.sh                 # boot it
-./run-qemu.sh ~/my-swf-files  # boot with a folder as a USB stick
+sudo apt install nasm gcc-multilib make python3 qemu-system-x86
+make            # -> build/FlashOS.iso  (about 100 KB)
+make run        # boot it as a CD in QEMU
+make run-usb    # boot it as a USB disk in QEMU
 ```
 
-Output: `output/images/rootfs.iso9660`, a hybrid ISO. Burn it to a CD or
-`dd` it to a USB stick to boot real PCs (BIOS boot).
+On GitHub, every push to `main` builds the ISO, boots it in QEMU, takes
+screenshots, and publishes `FlashOS.iso` on the **Releases** page.
 
-Add your own games: drop `.swf` files into `board/flashos/swf/` before building
-(they're baked into `/swf`), or put them on any FAT/exFAT USB stick.
+To boot a real PC, write the ISO to a USB stick
+(`sudo dd if=build/FlashOS.iso of=/dev/sdX bs=4M`) or use Rufus in **DD mode**.
+The PC must support **legacy BIOS / CSM** boot; FlashOS doesn't boot through UEFI yet.
+The keyboard layout is US.
 
-## Layout
+**Adding your own games:** drop `.swf` files into `swf/` and run `make`. They're
+packed into the FlashFS archive on the disc. The total must stay under about
+200 MB, and the PC needs about 64 MB of RAM plus the size of your files.
+
+## How it fits together
 
 ```
-build.sh, run-qemu.sh            build + test helpers
-configs/flashos_defconfig        Buildroot config (x86_64, glibc, Xorg, Mesa, ALSA)
-board/flashos/linux.fragment     kernel tweaks (no logo, big font, fb, sound, USB)
-board/flashos/isolinux.cfg       quiet boot, straight into FlashOS
-board/flashos/rootfs-overlay/    inittab, flash-run, flash-mount, xorg.conf
-board/flashos/post-build.sh      installs Ruffle + SWFs into the image
-package/flashos-tools/           Buildroot package for flashsh + flashwm
-src/flashsh/                     flashsh.c (shell + animation), flashwm.c
-tools/make_demo_swf.py           generates the bundled bounce.swf demo
+boot/mbr.asm        USB/HDD boot sector: loads the stage loader
+boot/loader.asm     stage loader: A20, BIOS font, loads kernel + FlashFS
+                    through unreal mode, picks a VESA 1024x768 mode,
+                    enters 32-bit protected mode
+kernel/entry.asm    kernel entry
+kernel/main.c       boot animation + shell
+kernel/video.c      framebuffer, back buffer, 16x32 text console
+kernel/plat_pc.c    PS/2 keyboard, TSC/PIT timer, reboot / power-off
+kernel/fs.c         FlashFS read-only file archive
+kernel/inflate.c    DEFLATE decoder
+kernel/swf.c        SWF parser, timeline and anti-aliased vector rasteriser
+tools/mkiso.py      writes the ISO 9660 + El Torito + MBR hybrid image
+tools/mkfs.py       packs files into FlashFS
+tools/make_demo_swf.py  builds the demo movies
+host/sim.c          runs the real kernel code on your PC and saves screenshots
+                    (`make sim`): handy for testing without an emulator
 ```
 
-## Tuning
-
-* `/etc/flashos.conf`: Ruffle options (default `--fullscreen --graphics gl`).
-* Graphics use Mesa's software renderer so it boots anywhere. For speed on real
-  hardware, enable `BR2_PACKAGE_MESA3D_LLVM` (llvmpipe) or a GPU driver
-  (`BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_IRIS`, `..._RADEONSI`) and switch
-  `xorg.conf` to the `modesetting` driver.
-* Debug shell: uncomment the `tty3` line in `rootfs-overlay/etc/inittab`, then
-  press Alt+F3.
-* Try just the shell on any Linux: `cd src/flashsh && make flashsh && ./flashsh`
-  (set `FLASHOS_SWF_DIRS=/path/to/swfs`).
+Copyright (c) 2026 FlashOS. All rights reserved.

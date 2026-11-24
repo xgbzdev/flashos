@@ -1,0 +1,19 @@
+shot 200 01_black
+shot 700 02_loading_top
+shot 1300 03_loading_mid
+shot 2600 04_ready
+key 3000 ls\n
+shot 4200 05_ls
+key 4500 readme.txt\n
+shot 5800 06_denied
+key 6000 run flashlogo\n
+shot 8200 07_flashlogo
+shot 9000 08_flashlogo_b
+key 9500 \e
+shot 10200 09_back
+key 10400 bounce.swf\n
+shot 12500 10_bounce
+key 13000 \e
+key 13500 about\n
+shot 15000 11_about
+end 15100
