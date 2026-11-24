@@ -267,6 +267,21 @@ static void cmd_install(void) {
 #endif
 }
 
+static void hex8(u8 v) { const char *h = "0123456789ABCDEF"; con_putc(h[v >> 4]); con_putc(h[v & 15]); }
+static void cmd_usbdiag(void) {
+    const u8 *d = (const u8 *)plat_bootinfo() + 28;
+    con_puts("\n disks="); put_num(d[0]);
+    con_puts(" edd="); hex8(d[1]);
+    con_puts(" read="); hex8(d[4]);
+    con_puts(" fat="); hex8(d[2]);
+    con_puts(" files="); put_num(d[3]);
+    for (int i = 0; i < 4; i++) {
+        con_puts("\n disk "); put_num((u32)i + 1); con_puts(": ");
+        for (int k = 0; k < 6; k++) { hex8(d[8 + i * 6 + k]); con_putc(' '); }
+    }
+    con_putc('\n');
+}
+
 static void handle(char *line) {
     while (*line == ' ') line++;
     u32 n = kstrlen(line);
@@ -292,6 +307,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "about") || !kstricmp(line, "ver")) cmd_about();
     else if (!kstricmp(line, "mem") || !kstricmp(line, "ram")) cmd_mem();
     else if (!kstricmp(line, "install")) cmd_install();
+    else if (!kstricmp(line, "usbdiag")) cmd_usbdiag();
     else if (!kstricmp(line, "reboot")) { con_puts("\n Rebooting...\n"); plat_sleep(400); plat_reboot(); }
     else if (!kstricmp(line, "shutdown") || !kstricmp(line, "poweroff")) {
         con_puts("\n Shutting down...\n");

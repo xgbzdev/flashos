@@ -75,7 +75,7 @@ if mode in ("install", "hdd"):
     type_text("ls\n")
     time.sleep(1.5)
     shot("02_ls")
-    type_text("mem\n")
+    type_text("usbdiag\n")
     time.sleep(1.5)
     shot("02b_mem")
     if mode == "install":

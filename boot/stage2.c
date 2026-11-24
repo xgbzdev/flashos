@@ -281,6 +281,10 @@ static void scan_drive(u8 drive) {
     fat_t f;
     if (!read_sec(drive, 0, sec)) return;
     diag[4] |= (u8)(1 << (drive & 7));
+    if ((drive & 7) < 4) {
+        u8 *b = diag + 8 + (drive & 7) * 6;
+        b[0] = sec[0]; b[1] = sec[1]; b[2] = sec[11]; b[3] = sec[12]; b[4] = sec[510]; b[5] = sec[511];
+    }
     if (sec[510] != 0x55 || sec[511] != 0xAA) return;
     /* unpartitioned "superfloppy" stick? */
     u32 bps = rd16(sec + 11);
@@ -316,10 +320,12 @@ void s2_main(void) {
     int n = disk_count();
     if (n > 8) n = 8;
     diag = PHYS(BOOTINFO + 28);
-    diag[0] = (u8)n; diag[1] = 0; diag[2] = 0; diag[3] = 0; diag[4] = 0;
+    for (int i = 0; i < 32; i++) diag[i] = 0;
+    diag[0] = (u8)n;
     for (int i = 0; i < n; i++) {
         u8 d = (u8)(0x80 + i);
-        if (disk_ok(d)) { diag[1] |= (u8)(1 << i); scan_drive(d); }
+        if (disk_ok(d)) diag[1] |= (u8)(1 << i);
+        scan_drive(d); /* try even without EDD: some BIOSes misreport it */
     }
     diag[3] = (u8)nfiles;
     if (!nfiles) return;
