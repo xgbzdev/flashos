@@ -214,7 +214,11 @@ Press Start 2P (SIL Open Font License).
 ByroTT has 2000-style icons, grey 3D buttons, a taskbar and a Start menu.
 An app opens in a window on black: a title bar in the window colour, then a
 grey body. SWFs from the Terminal or Files play in the same kind of window.
-The logo and its wallpapers are drawn by `tools/byrott_art.py`.
+The logo is the original hand-drawn sketch (`apps/byrott/art/logo_sketch.png`);
+`tools/byrott_art.py` makes its sizes and the wallpapers. Startup has no
+animations: the FlashOS logo, then a plain "Loading..." screen. F12 does
+not close ByroTT (in a game window it still closes the game). The taskbar
+has a volume button; FlashOS's own volume keys and bar are off.
 
 * **Terminal** (white text) plays SWFs, one at a time.
 * **Files** covers the hard disk, CD, USB and system files.

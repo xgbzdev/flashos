@@ -25,6 +25,10 @@ static void boot_animation(void) {
     con_clear();
     header_text();
     con_defer(0);
+#ifdef BYROTT
+    video_present(0, 0, scr_w, scr_h);   /* ByroTT edition: no animation */
+    return;
+#endif
 
     plat_sleep(350);
     int bottom = con_row_y(5);
@@ -584,6 +588,7 @@ static void read_line(char *buf, int max) {
  * and play another SWF in a window. */
 extern int quit_requested;
 extern int swf_window;            /* player.c: play inside a window */
+extern int swf_locked;            /* player.c: F12 / Ctrl+Q do not close it */
 extern const char *swf_window_title;
 static char launch_arg[256];
 static char run_req[64];
@@ -772,26 +777,23 @@ static void byrott_loop(void) {
         run_req[0] = 0;
         power_req = 0;
         const char *err = NULL;
+        swf_locked = 1;
         swf_play(f.data, f.size, &err);
+        swf_locked = 0;
         byr_after_play();
         if (run_req[0]) { play_windowed(run_req); continue; }
         launch_arg[0] = 0;
     }
 }
 
-/* the FlashOS logo, quickly, with no welcome line; ByroTT follows */
+/* the FlashOS logo, shown at once (no animation), with no welcome line */
 static void fast_logo(void) {
     con_defer(1);
     con_clear();
     for (int i = 0; i < 4; i++) { con_puts(LOGO[i]); con_putc('\n'); }
     con_defer(0);
-    int bottom = con_row_y(5);
-    for (int y = 0; y < bottom; y += 6) {
-        video_present(0, y, scr_w, 6);
-        plat_sleep(2);
-    }
     video_present(0, 0, scr_w, scr_h);
-    plat_sleep(500);
+    plat_sleep(600);
     plat_flush_input();
 }
 #endif

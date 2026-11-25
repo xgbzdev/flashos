@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""ByroTT artwork: the logo (a bird in a ring, white line art) at every size,
-and the logo wallpapers in colour variants.
+"""ByroTT artwork: the logo at every size, and the logo wallpapers in colour
+variants. The logo is the original hand-drawn sketch (art/logo_sketch.png,
+white lines on black); its lines are thickened for each size so they stay
+visible, then smoothed.
 
     python3 tools/byrott_art.py apps/byrott        # writes art/logo_*.png, wallpapers/logo-*.jpg
 
@@ -72,7 +74,7 @@ def polyline(draw, pts, w, col):
         draw.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=col)
 
 
-def render(size, stroke, simple=False):
+def render_vector(size, stroke, simple=False):
     """white logo on transparent; stroke in 1000-grid units"""
     S = 4
     big = size * S
@@ -110,6 +112,22 @@ def render(size, stroke, simple=False):
     return out
 
 
+SKETCH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "apps", "byrott", "art", "logo_sketch.png")
+
+
+def render(size, stroke, simple=False):
+    """the sketch, white on transparent; stroke: line width in sketch pixels"""
+    sk = Image.open(SKETCH).convert("L")
+    n = max(3, int(stroke) | 1)
+    m = sk.filter(ImageFilter.MaxFilter(n)) if n > 3 else sk
+    m = m.filter(ImageFilter.GaussianBlur(n / 5.0))
+    m = m.point(lambda v: 0 if v < 50 else min(255, int((v - 50) * 2.4)))
+    m = m.resize((size, size), Image.LANCZOS)
+    out = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+    out.putalpha(m)
+    return out
+
+
 def wallpaper(path, col, glow_col, bg_top, bg_bot, W=1024, H=768):
     img = Image.new("RGB", (W, H))
     px = img.load()
@@ -123,7 +141,7 @@ def wallpaper(path, col, glow_col, bg_top, bg_bot, W=1024, H=768):
     ImageDraw.Draw(halo).ellipse((W / 2 - 330, H / 2 - 340, W / 2 + 330, H / 2 + 320), fill=90)
     halo = halo.filter(ImageFilter.GaussianBlur(120))
     img = Image.composite(Image.new("RGB", (W, H), glow_col), img, halo)
-    lg = render(560, 15)
+    lg = render(560, 7)
     a = lg.getchannel("A")
     x0, y0 = (W - 560) // 2, (H - 560) // 2 - 10
     for blur, strength in ((26, 1.0), (9, 0.9)):
@@ -140,10 +158,10 @@ def wallpaper(path, col, glow_col, bg_top, bg_bot, W=1024, H=768):
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else "apps/byrott"
     art = os.path.join(root, "art")
-    render(784, 16).save(os.path.join(art, "logo_master.png"))
+    render(784, 5).save(os.path.join(art, "logo_master.png"))
     # thicker lines at small sizes, so they stay visible
-    for name, size, stroke in (("big", 320, 17), ("mid", 128, 26), ("small", 40, 48), ("tiny", 24, 62)):
-        render(size, stroke, size < 64).save(os.path.join(art, "logo_%s.png" % name))
+    for name, size, stroke in (("big", 320, 7), ("mid", 128, 13), ("small", 40, 31), ("tiny", 24, 45)):
+        render(size, stroke).save(os.path.join(art, "logo_%s.png" % name))
     walls = os.path.join(root, "wallpapers")
     for name, col, glow, top, bot in (
             ("cyan", (230, 255, 255), (30, 200, 220), (2, 18, 24), (0, 4, 8)),

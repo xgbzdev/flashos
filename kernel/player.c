@@ -25,6 +25,7 @@ u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
 /* ByroTT edition: play a movie inside a big black window with a title bar and an X */
 int swf_window;
 const char *swf_window_title;
+int swf_locked;    /* ByroTT itself: F12 and Ctrl+Q do not close it */
 /* ByroTT 1.0 windows: on black, a bar in the window colour, a small black
  * gap, then a light grey body the movie plays in */
 #define WIN_X 32
@@ -1206,7 +1207,12 @@ static int volume_key(int code) {
 static void handle_input(void) {
     int code, down, ascii;
     while (plat_kevent(&code, &down, &ascii)) {
+#ifndef BYROTT   /* ByroTT has its own volume button in the taskbar */
         if (code >= 120 && code <= 122) { if (down) volume_key(code); continue; }
+#endif
+#ifdef BYROTT
+        if (swf_locked) ; else
+#endif
         if (down && (code == FK_F12 || (code == 81 && plat_kdown(17)) || (code == 27 && !interactive))) {
             quit_requested = 1;
             return;
@@ -1483,6 +1489,9 @@ int swf_play(const u8 *data, u32 size, const char **err) {
                     sy_mouse = my;
                     draw_cursor(mx, my, hot && hot->hand);
                 }
+#ifdef BYROTT
+                if (!swf_locked)
+#endif
                 if (plat_kdown(FK_F12)) quit_requested = 1;
                 audio_pump();
                 osd_tick();

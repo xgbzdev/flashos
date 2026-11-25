@@ -16,7 +16,7 @@ var COLOR_NAMES = ["cyan", "blue", "red", "green"];
 var CURSORS = ["cyan", "blue", "red", "green", "yellow", "pink", "white", "black"];
 var CURSOR_COLS = {cyan: [0x1EC8DC, 0x000000], blue: [0x2F6FE0, 0xFFFFFF], red: [0xE0443C, 0xFFFFFF], green: [0x2FAE5B, 0x000000],
                    yellow: [0xFFD21E, 0x000000], pink: [0xFF6EC7, 0x000000], white: [0xFFFFFF, 0x000000], black: [0x000000, 0xFFFFFF]};
-var cfg = {wallpaper: "pyramids.jpg", color: "cyan", cursor: "cyan"};
+var cfg = {wallpaper: "pyramids.jpg", color: "cyan", cursor: "cyan", volume: "80", muted: "0"};
 var DEFAULT_WALL = "pyramids.jpg";
 var C1, C2, C3;            // window colour: main, dark, pale
 
@@ -34,7 +34,8 @@ function loadCfg() {
     applyColor();
 }
 function saveCfg() {
-    FlashOS.write("byrott.cfg", "wallpaper=" + cfg.wallpaper + "\ncolor=" + cfg.color + "\ncursor=" + cfg.cursor + "\n");
+    FlashOS.write("byrott.cfg", "wallpaper=" + cfg.wallpaper + "\ncolor=" + cfg.color + "\ncursor=" + cfg.cursor +
+                  "\nvolume=" + cfg.volume + "\nmuted=" + cfg.muted + "\n");
 }
 function applyColor() { var c = COLORS[cfg.color]; C1 = c[0]; C2 = c[1]; C3 = c[2]; }
 // text on the window colour: black on cyan, white on the darker colours
@@ -243,6 +244,7 @@ function makeWindow(id, title, ww, hh, dark, onClose) {
     if (curApp && curApp.id == id) return null;
     if (curApp) closeWindow(curApp);
     closeMenu();
+    closeVolume();
     var w = winLayer.createEmptyMovieClip("w_" + id, ++winDepth);
     w.id = id; w.w = ww; w.h = hh; w.title = title; w.onCloseFn = onClose;
     var ow = ww + WPAD * 2, oh = WBAR + WGAP + hh + WPAD * 2;
@@ -386,6 +388,103 @@ function paintTaskbar() {
     new Color(startBtn.lg).setRGB(C2);
 }
 function updateTasks() {}
+
+// ---------------------------------------------------------------- volume (taskbar speaker)
+var volBtn = null, volOpen = false;
+function applyVolume() {
+    if (FlashOS.setVolume) { FlashOS.setVolume(Number(cfg.volume)); FlashOS.setMuted(cfg.muted == "1"); }
+}
+function drawSpeaker(g, muted) {
+    g.clear();
+    box(g, 9, 13, 6, 10, INK, 0, 0, 0);
+    g.beginFill(INK, 100); g.moveTo(14, 13); g.lineTo(22, 6); g.lineTo(22, 30); g.lineTo(14, 23); g.lineTo(14, 13); g.endFill();
+    if (muted) {
+        g.lineStyle(3, 0xD02020, 100); g.moveTo(25, 12); g.lineTo(33, 24); g.moveTo(33, 12); g.lineTo(25, 24); g.lineStyle();
+    } else {
+        g.lineStyle(2, INK, 100);
+        g.moveTo(26, 13); g.curveTo(29, 18, 26, 23);
+        g.moveTo(29, 9); g.curveTo(35, 18, 29, 27);
+        g.lineStyle();
+    }
+}
+function buildVolumeButton() {
+    volBtn = button(taskbar, "vol", 8, W - 214, 6, 38, BAR - 12, "", function () { if (volOpen) closeVolume(); else openVolume(); }, 0, 12);
+    drawSpeaker(volBtn.icon, cfg.muted == "1");
+}
+function closeVolume() {
+    if (!volOpen) return;
+    menuLayer.vol.removeMovieClip();
+    menuLayer.volCatch.removeMovieClip();
+    volOpen = false;
+}
+function openVolume() {
+    closeMenu();
+    volOpen = true;
+    var c = menuLayer.createEmptyMovieClip("volCatch", 3);
+    box(c, 0, 0, W, H - BAR, 0xFFFFFF, 0, 0, 0);
+    c._alpha = 0;
+    c.onPress = function () { closeVolume(); };
+    c.useHandCursor = false;
+    var p = menuLayer.createEmptyMovieClip("vol", 4);
+    var pw = 110, ph = 250;
+    p._x = W - 250; p._y = H - BAR - ph;
+    var g = p.createEmptyMovieClip("g", 1);
+    box(g, 0, 0, pw, ph, PANEL, 0, 0, 0);
+    bevel(g, 0, 0, pw, ph, true);
+    label(p, "t", 2, 0, 8, pw, 22, "Volume", 14, INK, true, "center");
+    // the track (sunken) and the thumb
+    var TX = 47, TY = 40, TH = 150;
+    var tr = p.createEmptyMovieClip("tr", 3);
+    box(tr, TX, TY, 16, TH, WHITE, 0, 0, 0);
+    bevel(tr, TX, TY, 16, TH, false);
+    var pct = label(p, "pct", 5, 0, TY + TH + 4, pw, 20, "", 12, GREY, false, "center");
+    var th = p.createEmptyMovieClip("th", 4);
+    box(th, 0, 0, 36, 16, PANEL, 0, 0, 0);
+    bevel(th, 0, 0, 36, 16, true);
+    box(th, 6, 7, 24, 2, C1, 0, 0, 0);
+    th._x = TX - 10;
+    function place() {
+        th._y = TY + (100 - Number(cfg.volume)) / 100 * (TH - 16);
+        pct.text = cfg.volume + " %";
+    }
+    function setFromMouse() {
+        var v = Math.round(100 - (p._ymouse - TY - 8) / (TH - 16) * 100);
+        if (v < 0) v = 0;
+        if (v > 100) v = 100;
+        cfg.volume = "" + v;
+        if (cfg.muted == "1") { cfg.muted = "0"; drawSpeaker(volBtn.icon, false); drawCheck(); }
+        applyVolume();
+        place();
+    }
+    place();
+    var drag = p.createEmptyMovieClip("drag", 7);   // the whole slider area takes clicks
+    box(drag, TX - 12, TY - 4, 40, TH + 8, 0xFFFFFF, 0, 0, 0);
+    drag._alpha = 0;
+    drag.onPress = function () { setFromMouse(); p.onEnterFrame = function () { setFromMouse(); }; };
+    drag.onRelease = drag.onReleaseOutside = function () { p.onEnterFrame = null; saveCfg(); };
+    drag.useHandCursor = false;
+    // Mute check box
+    var mb = p.createEmptyMovieClip("mute", 6);
+    mb._x = 18; mb._y = ph - 30;
+    var mbox = mb.createEmptyMovieClip("b", 1);
+    label(mb, "t", 2, 22, -2, 60, 20, "Mute", 13, INK, false);
+    function drawCheck() {
+        mbox.clear();
+        box(mbox, 0, 0, 16, 16, WHITE, 0, 0, 0);
+        bevel(mbox, 0, 0, 16, 16, false);
+        if (cfg.muted == "1") {
+            mbox.lineStyle(2, INK, 100); mbox.moveTo(4, 8); mbox.lineTo(7, 12); mbox.lineTo(12, 4); mbox.lineStyle();
+        }
+    }
+    drawCheck();
+    mb.onRelease = function () {
+        cfg.muted = cfg.muted == "1" ? "0" : "1";
+        applyVolume();
+        drawSpeaker(volBtn.icon, cfg.muted == "1");
+        drawCheck();
+        saveCfg();
+    };
+}
 function two(n) { return n < 10 ? "0" + n : "" + n; }
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -409,6 +508,7 @@ function closeMenu() {
     paintTaskbar();
 }
 function openStart() {
+    closeVolume();
     menuOpen = true;
     paintTaskbar();
     var c = menuLayer.createEmptyMovieClip("catcher", 1);
@@ -1289,6 +1389,8 @@ function startDesktop() {
     setWallpaper(cfg.wallpaper);
     buildIcons();
     paintTaskbar();
+    buildVolumeButton();
+    applyVolume();
     applyCursor();
     tick();
     var arg = FlashOS.launchArg ? FlashOS.launchArg() : "";
@@ -1303,21 +1405,15 @@ function startDesktop() {
     }
 }
 
-// splash: the bird flies in, then the desktop appears
+// loading screen: "Loading..." on black, then the desktop (no animation)
 var sp = splash;
 box(sp, 0, 0, W, H, 0x000000, 0, 0, 0);
-var spBird = logo(sp, "b", 1, W / 2 - 110, 120, 220, WHITE);
-var spT = label(sp, "t", 2, 0, 380, W, 70, "ByroTT", 52, WHITE, true, "center");
-var spBarBg = sp.createEmptyMovieClip("bb", 3);
-box(spBarBg, W / 2 - 120, 480, 240, 6, 0x262626, 0, 0, 0);
-var spBar = sp.createEmptyMovieClip("bf", 4);
+label(sp, "t", 2, 0, Math.round(H / 2) - 34, W, 70, "Loading...", 44, WHITE, true, "center");
+sp.onPress = function () {};
+sp.useHandCursor = false;
+cursorClip._visible = false;
 var spT0 = getTimer(), spDone = false;
 sp.onEnterFrame = function () {
-    var t = (getTimer() - spT0) / 1400;
-    if (t > 1) t = 1;
-    spBar.clear();
-    box(spBar, W / 2 - 120, 480, Math.max(6, 240 * t), 6, 0xFFFFFF, 0, 0, 0);
-    spBird._y = 120 + Math.sin(getTimer() / 200) * 4;
-    if (!spDone && t > 0.25) { spDone = true; startDesktop(); }
-    if (t >= 1) { sp._alpha -= 12; if (sp._alpha <= 0) { sp.removeMovieClip(); } }
+    if (!spDone && getTimer() - spT0 > 150) { spDone = true; startDesktop(); cursorClip._visible = false; }
+    if (spDone && getTimer() - spT0 > 1500) { sp.removeMovieClip(); cursorClip._visible = true; }
 };

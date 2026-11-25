@@ -3188,6 +3188,16 @@ static val nf_bCursor(ctx *c, val th, val *a, int n) {
     cursor_line = 0xFF000000u | (n > 1 ? (u32)to_i32(a[1]) & 0xFFFFFF : 0xFFFFFF);
     return vundef();
 }
+/* volume(): 0..100;  setVolume(0..100);  muted();  setMuted(bool) */
+static val nf_bVol(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vnum((audio_get_master() * 100 + 128) / 256); }
+static val nf_bSetVol(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    int v = to_i32(ARG(0));
+    audio_set_master(v <= 0 ? 0 : v >= 100 ? 256 : v * 256 / 100);
+    return vundef();
+}
+static val nf_bMuted(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vbool(audio_get_muted()); }
+static val nf_bSetMuted(ctx *c, val th, val *a, int n) { (void)c; (void)th; audio_set_muted(to_bool(ARG(0))); return vundef(); }
 static void byrott_api(obj *f) {
     net_buf = NULL;
     set_hidden(f, "edition", vstr("ByroTT"));
@@ -3204,6 +3214,10 @@ static void byrott_api(obj *f) {
     def_native(f, "httpGet", nf_bHttp);
     def_native(f, "copyFile", nf_bCopy);
     def_native(f, "cursorColor", nf_bCursor);
+    def_native(f, "volume", nf_bVol);
+    def_native(f, "setVolume", nf_bSetVol);
+    def_native(f, "muted", nf_bMuted);
+    def_native(f, "setMuted", nf_bSetMuted);
 }
 #endif
 
