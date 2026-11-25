@@ -18,8 +18,8 @@ var THEME_NAMES = ["default", "orange", "green", "blue", "byrott"];
 var CURSORS = ["white", "black", "red", "green"];
 var CURSOR_COLS = {white: [0xFFFFFF, 0x000000], black: [0x000000, 0xFFFFFF], red: [0xFF2020, 0xFFFFFF], green: [0x20E040, 0xFFFFFF]};
 var CURSOR_NAMES = {white: "White", black: "Black", red: "Red", green: "Green"};
-var cfg = {wallpaper: "pyramids.jpg", theme: "default", cursor: "white", volume: "80", muted: "0"};
-var DEFAULT_WALL = "pyramids.jpg";
+var cfg = {wallpaper: "pyramids-planet.jpg", theme: "default", cursor: "white", volume: "80", muted: "0"};
+var DEFAULT_WALL = "pyramids-planet.jpg";
 var C1, C2, C3;            // window theme: bar, bar fade, pale (selections)
 
 function loadCfg() {
