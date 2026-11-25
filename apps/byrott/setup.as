@@ -19,6 +19,9 @@ function label(mc, name, depth, x, y, w, h, text, size, color, bold, align) {
     return t;
 }
 function rrect(mc, x, y, w, h, r) {
+    r = 0;   // square corners
+    mc.moveTo(x, y); mc.lineTo(x + w, y); mc.lineTo(x + w, y + h); mc.lineTo(x, y + h); mc.lineTo(x, y);
+    return;
     mc.moveTo(x + r, y); mc.lineTo(x + w - r, y); mc.curveTo(x + w, y, x + w, y + r);
     mc.lineTo(x + w, y + h - r); mc.curveTo(x + w, y + h, x + w - r, y + h);
     mc.lineTo(x + r, y + h); mc.curveTo(x, y + h, x, y + h - r);
@@ -52,6 +55,14 @@ function bird(g, x, y, s, col) {
     g.moveTo(x - 12 * s, y - 4 * s); g.lineTo(x - 26 * s, y - 12 * s); g.lineTo(x - 20 * s, y + 2 * s); g.lineTo(x - 12 * s, y + 6 * s);
     g.endFill();
 }
+function logo(parent, name, depth, x, y, size) {
+    var b = FlashOS.loadBitmap(size > 140 ? "logo_big.png" : (size > 44 ? "logo_mid.png" : "logo_small.png"));
+    var mc = parent.createEmptyMovieClip(name, depth);
+    mc._x = x; mc._y = y;
+    if (b) { mc.attachBitmap(b, 1, "auto", true); mc._xscale = mc._yscale = size / b.width * 100; }
+    else bird(mc, size / 2, size / 2, size / 60, WHITE);
+    return mc;
+}
 function button(parent, name, depth, x, y, w, h, text, onClick, primary) {
     var b = parent.createEmptyMovieClip(name, depth);
     b._x = x; b._y = y; b.w = w; b.h = h; b.primary = primary;
@@ -72,7 +83,7 @@ function button(parent, name, depth, x, y, w, h, text, onClick, primary) {
 // ---------------------------------------------------------------- background: the pyramids
 var bg = _root.createEmptyMovieClip("bg", 1);
 var pic = FlashOS.loadBitmap("pyramids.jpg");
-if (!pic) pic = FlashOS.loadBitmap("sky.jpg");
+if (!pic) pic = FlashOS.loadBitmap("logo-blue.jpg");
 if (pic) {
     bg.attachBitmap(pic, 1, "auto", true);
     var s = Math.max(W / pic.width, H / pic.height);
@@ -93,7 +104,7 @@ var fr = win.createEmptyMovieClip("fr", 2);
 box(fr, 0, 0, PW, PH, WHITE, 0, 0, 20);
 box(fr, 0, 0, PW, 64, C1, 0, 0, 20);
 box(fr, 0, 40, PW, 24, C1, 0, 0, 0);
-bird(fr, 40, 36, 0.95, WHITE);
+logo(win, "lg", 6, 16, 10, 44);
 label(win, "title", 3, 80, 14, 500, 40, "ByroTT Setup", 26, WHITE, true);
 var stepTxt = label(win, "step", 4, PW - 200, 22, 180, 30, "", 15, WHITE, false, "right");
 var page = null, primary = null, secondary = null;
@@ -105,10 +116,10 @@ function show(n) {
     var p = page;
     if (n == 1) {
         stepTxt.text = "Step 1 of 3";
-        var big = p.createEmptyMovieClip("bird", 1);
-        bird(big, 110, 150, 3.0, C1);
+        var big = logo(p, "bird", 1, 30, 50, 170);
+        new Color(big).setRGB(C1);
         label(p, "h", 2, 230, 40, 420, 40, "Welcome to ByroTT!", 28, INK, true);
-        label(p, "t", 3, 230, 90, 420, 200, "ByroTT is a bird themed desktop with windows, a terminal for SWF games, " +
+        label(p, "t", 3, 230, 90, 420, 200, "ByroTT is a desktop with full screen apps: a terminal for SWF games, " +
               "files, the internet, notepad and settings.\n\nThis setup installs ByroTT on your hard disk.", 17, INK, false);
         secondary = function () { FlashOS.exit(); };
         primary = function () { show(2); };

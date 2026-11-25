@@ -86,6 +86,8 @@ BYRFONTS := --font apps/byrott/Fredoka-Regular.ttf "Fredoka" --font apps/byrott/
             --font apps/byrott/DejaVuSansMono.ttf "DejaVu Sans Mono"
 # private/wallpapers: pictures that stay out of the public repository
 BYRWALL := $(sort $(wildcard apps/byrott/wallpapers/*.jpg) $(wildcard private/wallpapers/*.jpg))
+BYRART  := $(wildcard apps/byrott/art/icon_*.png) apps/byrott/art/logo_big.png apps/byrott/art/logo_mid.png \
+           apps/byrott/art/logo_small.png apps/byrott/art/logo_tiny.png
 
 $(BYRDIR)/%.o: kernel/%.c kernel/kernel.h kernel/swf.h kernel/audio.h | build
 	mkdir -p $(BYRDIR)
@@ -104,10 +106,10 @@ $(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/Fredoka-Regular
 $(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/Fredoka-Regular.ttf | build
 	mkdir -p $(BYRDIR)
 	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT" --fps 30
-$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Maze.swf $(BYRWALL)
+$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Maze.swf $(BYRWALL) $(BYRART)
 	cp build/FlashOS.iso $(BYRDIR)/flashos.iso
 	cp build/apps/Maze.swf $(BYRDIR)/maze.swf
-	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/maze.swf $(BYRWALL)
+	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/maze.swf $(BYRWALL) $(BYRART)
 build/ByroTT.iso: build/mbr.bin build/loader.bin build/stage2.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin tools/mkiso.py
 	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin build/stage2.bin $@ \
 		--label BYROTT --file BYR.SWF=$(BYRDIR)/byr.swf

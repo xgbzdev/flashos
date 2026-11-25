@@ -25,11 +25,12 @@ u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
 /* ByroTT edition: play a movie inside a big black window with a title bar and an X */
 int swf_window;
 const char *swf_window_title;
-#define WIN_X 24
-#define WIN_Y 20
-#define WIN_W 976
-#define WIN_H 728
-#define WIN_BAR 40
+/* full screen, pure black, a grey X at the top right (as ByroTT's apps) */
+#define WIN_X 0
+#define WIN_Y 0
+#define WIN_W 1024
+#define WIN_H 768
+#define WIN_BAR 56
 static void win_text(int x, int y, const char *s, u32 col) {
     const u8 *font = plat_font();
     for (; *s; s++, x += 16) {
@@ -41,18 +42,15 @@ static void win_text(int x, int y, const char *s, u32 col) {
 }
 extern u32 byr_win_color;
 static void win_chrome(void) {
-    video_fill(0, 0, scr_w, scr_h, 0xFF10202Au);
-    video_fill(WIN_X - 2, WIN_Y - 2, WIN_W + 4, WIN_H + 4, byr_win_color);
-    video_fill(WIN_X, WIN_Y, WIN_W, WIN_BAR, byr_win_color);
-    video_fill(WIN_X, WIN_Y + WIN_BAR, WIN_W, WIN_H - WIN_BAR, 0xFF000000u);
+    video_fill(0, 0, scr_w, scr_h, 0xFF000000u);
     char t[48];
     kstrcpy(t, swf_window_title ? swf_window_title : "", 44);
-    win_text(WIN_X + 14, WIN_Y + 4, t, 0xFFFFFFFFu);
-    int bx = WIN_X + WIN_W - 44, by = WIN_Y + 6;
-    video_fill(bx, by, 36, WIN_BAR - 12, 0xFFE53935u);
-    for (int i = 0; i < 16; i++) {
-        video_fill(bx + 10 + i, by + 6 + i * (WIN_BAR - 24) / 16, 3, 3, 0xFFFFFFFFu);
-        video_fill(bx + 25 - i, by + 6 + i * (WIN_BAR - 24) / 16, 3, 3, 0xFFFFFFFFu);
+    win_text(20, 12, t, 0xFF9A9A9Au);
+    int bx = WIN_W - 58, by = 10;
+    video_fill(bx, by, 46, 38, 0xFF5A5A5Au);
+    for (int i = 0; i < 17; i++) {
+        video_fill(bx + 14 + i, by + 10 + i, 3, 3, 0xFFFFFFFFu);
+        video_fill(bx + 30 - i, by + 10 + i, 3, 3, 0xFFFFFFFFu);
     }
 }
 #endif
@@ -1259,7 +1257,7 @@ static void handle_input(void) {
     }
     int is_down = mb & 1;
 #ifdef BYROTT
-    if (swf_window && is_down && !mouse_down && mx >= WIN_X + WIN_W - 44 && mx < WIN_X + WIN_W - 8 && my >= WIN_Y + 6 && my < WIN_Y + WIN_BAR - 6) {
+    if (swf_window && is_down && !mouse_down && mx >= WIN_W - 58 && mx < WIN_W - 12 && my >= 10 && my < 48) {
         quit_requested = 1;
         return;
     }
@@ -1380,7 +1378,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         stage_h = (int)sh;
         int ax = 0, ay = 0, aw = scr_w, ah = scr_h;
 #ifdef BYROTT
-        if (swf_window) { ax = WIN_X + 4; ay = WIN_Y + WIN_BAR; aw = WIN_W - 8; ah = WIN_H - WIN_BAR - 4; }
+        if (swf_window) { ax = 0; ay = WIN_BAR; aw = scr_w; ah = scr_h - WIN_BAR; }
 #endif
         float s = aw / sw < ah / sh ? aw / sw : ah / sh;
         int vw = (int)(sw * s), vh = (int)(sh * s);

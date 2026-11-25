@@ -200,8 +200,8 @@ Press Start 2P (SIL Open Font License).
 
 ## ByroTT
 
-**`ByroTT.iso`** holds ByroTT, a bird-themed desktop made in Flash, plus a
-special edition of FlashOS that starts it.
+**`ByroTT.iso`** holds ByroTT, a desktop made in Flash, plus a special
+edition of FlashOS that starts it.
 
 1. Start the computer from `ByroTT.iso`. It looks like the normal FlashOS.
 2. Type `Byr.swf`. The ByroTT Setup wizard installs the ByroTT edition on
@@ -209,14 +209,17 @@ special edition of FlashOS that starts it.
 3. Take the CD out and restart. The FlashOS logo flashes quickly, then
    ByroTT starts. Hold **F8** while it starts to get the FlashOS terminal.
 
-ByroTT has a taskbar, a Start menu and windows you can move.
+ByroTT has a desktop with Windows 2000-style icons, a taskbar and a Start
+menu. Apps open full screen on pure black, with a grey X to close them.
+Everything has square corners. The logo is a drawing, kept as pictures in
+`apps/byrott/art/`; the wallpapers show it in colour variants.
 
 * **Terminal** plays SWFs in a big black window with an X, one at a time.
 * **Files** covers the hard disk, CD, USB and system files.
 * **Internet** is an http-only web browser; its start page links FrogFind.
 * **Notepad**, a picture and video viewer, and **Maze 3D** are included.
-* **Settings** changes the wallpaper, the window colour (cyan, blue, red,
-  green) and the cursor.
+* **Settings** changes the wallpaper, the colour (cyan, blue, red, green)
+  and the cursor.
 * **Settings > Uninstall** (or `uninstall` in the Terminal) writes the
   original FlashOS, which is stored inside ByroTT, back to the disk.
   Saved files are kept.
