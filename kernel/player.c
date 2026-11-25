@@ -1363,26 +1363,25 @@ int swf_play(const u8 *data, u32 size, const char **err) {
          * speeds the movie up; if the PC is behind schedule, frames are
          * advanced without being drawn (at most 8 in a row). */
         u32 frame_us = (u32)(int)(1000000.0f / fps);
-        u32 start = plat_ms();
-        u64 nframe = 0;
+        u32 due = plat_ms(), frac = 0;
         (void)frame_ms;
         while (!quit_requested) {
             handle_input();
             if (quit_requested) break;
             if (!first) advance_all();
             first = 0;
-            nframe++;
+            frac += frame_us;
+            due += frac / 1000;
+            frac %= 1000;
             audio_pump();
-            u32 due = start + (u32)(nframe * frame_us / 1000);
             if ((s32)(plat_ms() - due) > 0 && skipped < 8) {
                 skipped++;
                 continue;
             }
             if (skipped >= 8 && (s32)(plat_ms() - due) > 200) {
                 /* far behind (very slow PC): restart the schedule here */
-                start = plat_ms();
-                nframe = 0;
-                due = start;
+                due = plat_ms();
+                frac = 0;
             }
             skipped = 0;
             video_fill(vx, vy, vw, vh, bg_color);
