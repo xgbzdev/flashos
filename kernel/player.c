@@ -20,6 +20,13 @@ static int n_init_done;
 
 /* ---------------------------------------------------------------- memory */
 static u8 *a_base, *a_top, *a_end;
+u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
+#ifdef HOSTED
+#include <time.h>
+#include <stdio.h>
+static u64 host_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (u64)t.tv_sec * 1000000000ull + t.tv_nsec; }
+u64 host_render_ns, host_frames;
+#endif
 
 void *amalloc(u32 n) {
     n = (n + 7) & ~7u;
@@ -162,6 +169,7 @@ static void define_font(u16 id, const u8 *b, u32 len, int ver) {
         u32 flags = r8(&r);
         r8(&r);
         u32 nl = r8(&r);
+        if (nl && r.i + nl <= len) fd->name = astrndup((const char *)b + r.i, nl);
         r.i += nl;
         int n = (int)r16(&r);
         int wide = flags & 8, widecodes = flags & 4;
@@ -178,6 +186,13 @@ static void define_font(u16 id, const u8 *b, u32 len, int ver) {
         }
         r.i = tbl + offs[n];
         for (int i = 0; i < n; i++) fd->code[i] = (u16)(widecodes ? r16(&r) : r8(&r));
+        if ((flags & 0x80) && r.i + 6 + 2 * (u32)n <= len) { /* HasLayout */
+            fd->ascent = (float)r16(&r);
+            fd->descent = (float)r16(&r);
+            fd->leading = (float)(s16)r16(&r);
+            fd->adv = amalloc(sizeof(float) * (n + 1));
+            for (int i = 0; i < n; i++) fd->adv[i] = (float)(s16)r16(&r);
+        }
     }
     chars[id].type = CH_FONT;
     chars[id].p = fd;
@@ -239,6 +254,9 @@ static void define_etext(u16 id, const u8 *b, u32 len) {
     if (e->flags & 0x0020) { e->align = (int)r8(&r); r16(&r); r16(&r); r16(&r); r16(&r); }
     e->var = rstr(&r);
     if (e->flags & 0x8000) e->init = rstr(&r);              /* HasText */
+    e->has_bg = e->has_border = (e->flags & 0x0008) != 0;   /* Border: white box, black frame */
+    e->bg = 0xFFFFFFFFu;
+    e->bc = 0xFF000000u;
     chars[id].type = CH_ETEXT;
     chars[id].p = e;
 }
@@ -453,6 +471,7 @@ void inst_set_text(inst *in, const char *s) {
     if (in->et && (in->et->flags & 0x0002)) {
         u32 n = kstrlen(s);
         char *d = amalloc(n + 1);
+        if (!d) return;
         u32 j = 0;
         int tag = 0;
         for (u32 i = 0; i < n; i++) {
@@ -463,10 +482,19 @@ void inst_set_text(inst *in, const char *s) {
             else if (!tag) d[j++] = s[i];
         }
         d[j] = 0;
-        in->text = d;
+        tf_set_text(in, d, j);
     } else {
-        in->text = astrdup(s);
+        tf_set_text(in, s, kstrlen(s));
     }
+}
+
+u16 font_by_name(const char *name) {
+    if (!name || !*name || !chars) return 0;
+    for (u32 i = 1; i < 65536; i++)
+        if (chars[i].type == CH_FONT && chars[i].p && ((font_def *)chars[i].p)->name &&
+            !kstricmp(((font_def *)chars[i].p)->name, name) && ((font_def *)chars[i].p)->nglyph > 1)
+            return (u16)i;
+    return 0;
 }
 
 /* ---------------------------------------------------------------- placement */
@@ -775,6 +803,11 @@ static void content_bounds(inst *in, mat m, float *b) {
         break;
     }
     case K_SPRITE:
+        if (in->bmpdata && ((bdata *)in->bmpdata)->bm) {
+            bitmap *bm = ((bdata *)in->bmpdata)->bm;
+            s32 r[4] = {0, bm->w * 20, 0, bm->h * 20};
+            grow_rect(b, m, r);
+        }
         if (in->dyn && in->dyn->built) grow_rect(b, m, in->dyn->built->bounds);
         for (int i = 0; i < in->n; i++) content_bounds(in->kids[i], mat_mul(m, in->kids[i]->m), b);
         break;
@@ -819,6 +852,12 @@ static int hit_rec(inst *in, mat m, float x, float y, int hit_state) {
         return 0;
     }
     case K_SPRITE: {
+        if (in->bmpdata && ((bdata *)in->bmpdata)->bm) {
+            bitmap *bm = ((bdata *)in->bmpdata)->bm;
+            mat iv = mat_inv(m);
+            float lx = iv.a * x + iv.c * y + iv.tx, ly = iv.b * x + iv.d * y + iv.ty;
+            if (lx >= 0 && ly >= 0 && lx < bm->w * 20 && ly < bm->h * 20) return 1;
+        }
         if (in->dyn && in->dyn->built) {
             mat iv = mat_inv(m);
             if (shape_hit(in->dyn->built, iv.a * x + iv.c * y + iv.tx, iv.b * x + iv.d * y + iv.ty)) return 1;
@@ -879,30 +918,10 @@ static void render_node(inst *in, mat pm, cxf pc) {
     switch (in->kind) {
     case K_SHAPE: draw_shape(chars[in->id].p, m, &c, 0); break;
     case K_TEXT: render_text(chars[in->id].p, m, &c); break;
-    case K_ETEXT: {
-        etext_def *e = in->et;
+    case K_ETEXT:
         as_text_sync(in);
-        if (e->flags & 0x0008) { /* border: white box with a black frame */
-            int x0 = (int)(m.a * e->bounds[0] + m.tx), y0 = (int)(m.d * e->bounds[2] + m.ty);
-            int x1 = (int)(m.a * e->bounds[1] + m.tx), y1 = (int)(m.d * e->bounds[3] + m.ty);
-            if (!mask_get_active()) {
-                video_fill(x0, y0, x1 - x0, y1 - y0, 0xFF000000u);
-                video_fill(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2, 0xFFFFFFFFu);
-            }
-        }
-        const char *t = in->text ? in->text : "";
-        static char shown[1024];
-        u32 n = kstrlen(t);
-        if (n > 1000) n = 1000;
-        for (u32 i = 0; i < n; i++) shown[i] = (e->flags & 0x1000) ? '*' : t[i]; /* password */
-        shown[n] = 0;
-        if (in == text_focus && (plat_ms() / 500) % 2 == 0) { shown[n] = '_'; shown[n + 1] = 0; }
-        if (*shown)
-            draw_bitmap_text(shown, m, (float)e->bounds[0] + 40, (float)e->bounds[2] + 40, e->height,
-                             cx_apply(&c, e->color), (float)(e->bounds[1] - e->bounds[0] - 40),
-                             (float)(e->bounds[3] - e->bounds[2]), e->align);
+        tf_render(in, m, &c);
         break;
-    }
     case K_BUTTON: {
         button_def *bd = chars[in->id].p;
         u8 bit = in->btn_state == 2 ? 4 : in->btn_state == 1 ? 2 : 1;
@@ -918,6 +937,7 @@ static void render_node(inst *in, mat pm, cxf pc) {
         break;
     }
     case K_SPRITE:
+        if (in->bmpdata && ((bdata *)in->bmpdata)->bm) draw_bitmap(((bdata *)in->bmpdata)->bm, m, &c, ((bdata *)in->bmpdata)->smooth);
         if (in->dyn) { shape_from_dyn(in->dyn); if (in->dyn->built) draw_shape(in->dyn->built, m, &c, 0); }
         render_kids(in, m, c);
         break;
@@ -1089,31 +1109,13 @@ static int sx_mouse, sy_mouse;
 inst *text_focus;
 void text_set_focus(inst *in) { text_focus = (in && in->kind == K_ETEXT && !(in->et->flags & 0x0800)) ? in : NULL; }
 
-static void text_store(inst *in) {
-    if (in->et->var && *in->et->var) {
-        /* keep the bound variable in step with what was typed */
-        val v = vstr(in->text);
-        obj *po = as_clip_obj(in->parent ? in->parent : root);
-        (void)po;
-        as_set_var_path(in->parent ? in->parent : root, in->et->var, v);
-    }
+void text_changed(inst *in) {
+    if (in->et->var && *in->et->var)  /* keep the bound variable in step with what was typed */
+        as_set_var_path(in->parent ? in->parent : root, in->et->var, vstr(astrdup(tf_text(in))));
+    if (in->o) as_call_handler(in, "onChanged", 0, 0);
 }
 
-static void text_type(int code, int ascii) {
-    inst *t = text_focus;
-    if (!t || t->dead) { text_focus = NULL; return; }
-    u32 n = t->text ? kstrlen(t->text) : 0;
-    char *nt = amalloc(n + 2);
-    if (!nt) return;
-    if (n) memcpy(nt, t->text, n);
-    if (code == 8) { if (n) n--; }
-    else if (code == 13) { if (t->et->flags & 0x2000) nt[n++] = '\n'; else return; }
-    else if (ascii >= 32 && ascii < 127) { if (t->et->maxlen && (int)n >= t->et->maxlen) return; nt[n++] = (char)ascii; }
-    else return;
-    nt[n] = 0;
-    t->text = nt;
-    text_store(t);
-}
+static inst *text_drag;
 
 /* topmost editable text field under the mouse */
 static inst *text_hit(inst *in, mat m, float x, float y) {
@@ -1168,7 +1170,7 @@ static void handle_input(void) {
             quit_requested = 1;
             return;
         }
-        if (down && text_focus) text_type(code, ascii);
+        if (down && text_focus) tf_key(text_focus, code, ascii);
         if (down) {
             last_key_code = code;
             last_key_ascii = ascii;
@@ -1204,6 +1206,7 @@ static void handle_input(void) {
         last_mx = mx;
         last_my = my;
         update_drag();
+        if (mouse_down && text_drag && text_drag == text_focus) tf_mouse(text_drag, tx, ty, 0, 0);
         all_clips(0x08, "onMouseMove", 0);
         as_listeners("Mouse", "onMouseMove");
     }
@@ -1223,11 +1226,14 @@ static void handle_input(void) {
     if (is_down && !mouse_down) {
         mouse_down = 1;
         text_set_focus(text_hit(root, MAT_ID, tx, ty));
+        text_drag = text_focus;
+        if (text_focus) tf_mouse(text_focus, tx, ty, 1, plat_kdown(16));
         all_clips(0x10, "onMouseDown", 0);
         as_listeners("Mouse", "onMouseDown");
         if (hot) { pressed = hot; fire(hot, 0x04, 0x0400, "onPress"); }
     } else if (!is_down && mouse_down) {
         mouse_down = 0;
+        text_drag = NULL;
         all_clips(0x20, "onMouseUp", 0);
         as_listeners("Mouse", "onMouseUp");
         if (pressed) {
@@ -1320,6 +1326,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         mouse_visible = 1;
         hot = pressed = drag = NULL;
         text_focus = NULL;
+        text_drag = NULL;
         mouse_down = 0;
         last_mx = last_my = -1;
         flat = NULL;
@@ -1336,6 +1343,8 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         mat b = {s / 20.0f, 0, 0, s / 20.0f, vx - st[0] * s / 20.0f, vy - st[2] * s / 20.0f};
         base = b;
 
+        flv_reset_all();
+        glyph_cache_reset();
         timeline *tl = make_timeline(swf + 8 + r.i, total - 8 - r.i);
         audio_init();
         audio_stop_all();
@@ -1370,6 +1379,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
             if (quit_requested) break;
             if (!first) advance_all();
             first = 0;
+            flv_tick_all();
             frac += frame_us;
             due += frac / 1000;
             frac %= 1000;
@@ -1385,7 +1395,14 @@ int swf_play(const u8 *data, u32 size, const char **err) {
             }
             skipped = 0;
             video_fill(vx, vy, vw, vh, bg_color);
+#ifdef HOSTED
+            u64 rt0 = host_ns();
+#endif
             render_node(root, base, CX_ID);
+#ifdef HOSTED
+            host_render_ns += host_ns() - rt0;
+            host_frames++;
+#endif
             erase_cursor();
             video_present(vx, vy, vw, vh);
             audio_pump();
@@ -1411,6 +1428,7 @@ out:
     audio_halt();
     plat_flush_input();
     a_base = a_top = a_end = NULL;
+    flv_reset_all();
     heap_reset(mark);
     return 0;
 }

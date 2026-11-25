@@ -12,7 +12,7 @@ CFLAGS  := -m32 -march=i686 -mno-sse -mno-sse2 -mno-mmx -mfpmath=387 -O2 \
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 
 KSRC    := kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c \
-           kernel/render.c kernel/player.c kernel/avm1.c kernel/ata.c kernel/net.c kernel/cdfs.c kernel/audio.c kernel/image.c
+           kernel/render.c kernel/player.c kernel/avm1.c kernel/ata.c kernel/net.c kernel/cdfs.c kernel/audio.c kernel/image.c kernel/textfield.c kernel/docs.c kernel/flv.c
 KOBJ    := $(patsubst kernel/%.c,build/%.o,$(KSRC) kernel/plat_pc.c)
 FILES   := $(wildcard swf/*.swf) $(wildcard files/*)
 
@@ -59,6 +59,14 @@ build/loader.bin: boot/loader.asm | build
 
 swf/bounce.swf swf/flashlogo.swf &: tools/make_demo_swf.py
 	$(PY) tools/make_demo_swf.py swf
+
+# Flash Notepad (an app for the Flash notepad CD, not built into the OS)
+APPFONTS := --font apps/notepad/ComicNeue-Regular.ttf "Comic Neue" --font apps/notepad/ComicNeue-Bold.ttf "Comic Neue Bold"
+build/apps/FlashNotepad.swf: apps/notepad/notepad.as tools/asc.py apps/notepad/ComicNeue-Regular.ttf apps/notepad/ComicNeue-Bold.ttf | build
+	mkdir -p build/apps
+	$(PY) tools/asc.py $< $@ $(APPFONTS) --title "Flash Notepad"
+apps: build/apps/FlashNotepad.swf
+.PHONY: apps
 
 build/flashfs.bin: tools/mkfs.py swf/bounce.swf swf/flashlogo.swf $(FILES) | build
 	$(PY) tools/mkfs.py $@ $(sort $(wildcard swf/*.swf) $(wildcard files/*))

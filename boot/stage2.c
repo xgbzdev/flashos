@@ -132,6 +132,17 @@ static int mount(fat_t *f, u8 drive, u32 lba) {
     return 1;
 }
 
+static char lower(char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
+/* name ends with "." + e (lower case), any case */
+static int ext_is(const char *n, const char *e) {
+    int l = 0, k = 0;
+    while (n[l]) l++;
+    while (e[k]) k++;
+    if (l <= k + 1 || n[l - k - 1] != '.') return 0;
+    for (int i = 0; i < k; i++) if (lower(n[l - k + i]) != e[i]) return 0;
+    return 1;
+}
+
 static u32 next_clus(fat_t *f, u32 c) {
     u32 off = f->fat32 ? c * 4 : c * 2;
     u32 lba = f->fat_lba + off / 512;
@@ -178,9 +189,9 @@ static void add_file(fat_t *f, const char *name, u32 clus, u32 size) {
         clus = next_clus(f, c);
     }
     if (left) return;
-    /* must really be a SWF */
+    /* a .swf must really be a SWF */
     u8 *d = arch + start;
-    if (!((d[0] == 'F' || d[0] == 'C' || d[0] == 'Z') && d[1] == 'W' && d[2] == 'S')) return;
+    if (ext_is(name, "swf") && !((d[0] == 'F' || d[0] == 'C' || d[0] == 'Z') && d[1] == 'W' && d[2] == 'S')) return;
     u8 *e = arch + 8 + nfiles * 64;
     for (int i = 0; i < 56; i++) e[i] = 0;
     for (int i = 0; i < 55 && name[i]; i++) e[i] = (u8)name[i];
@@ -196,11 +207,10 @@ static int lfn_ok;
 static u32 subdirs[16];
 static int nsub;
 
-static char lower(char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 static int is_swf(const char *n) {
-    int l = 0;
-    while (n[l]) l++;
-    return l > 4 && n[l - 4] == '.' && lower(n[l - 3]) == 's' && lower(n[l - 2]) == 'w' && lower(n[l - 1]) == 'f';
+    static const char *const ext[] = {"swf", "txt", "jpg", "jpeg", "png", "gif", "bmp", "flv", 0};
+    for (int i = 0; ext[i]; i++) if (ext_is(n, ext[i])) return 1;
+    return 0;
 }
 
 /* process one 512-byte directory sector; returns 0 at end of directory */

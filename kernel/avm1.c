@@ -118,6 +118,7 @@ struct obj {
     obj *sup_proto, *sup_ctor;
     val sup_this;
     num prim;
+    void *ext; /* BitmapData / video */
     obj *next_free;
 };
 
@@ -610,9 +611,26 @@ static val get_member(val ov, val namev) {
             if (!kstricmp(name, "_root")) return vobj(as_clip_obj(root));
             if (!kstricmp(name, "_global")) return vobj(G);
             if (in->kind == K_ETEXT) {
-                if (!kstricmp(name, "text") || !kstricmp(name, "htmlText")) return vstr(in->text ? in->text : "");
-                if (!kstricmp(name, "textColor")) return vnum(in->et->color & 0xFFFFFF);
-                if (!kstricmp(name, "length")) return vnum(in->text ? kstrlen(in->text) : 0);
+                etext_def *e = in->et;
+                if (!kstricmp(name, "text") || !kstricmp(name, "htmlText")) return vstr(astrdup(tf_text(in)));
+                if (!kstricmp(name, "textColor")) return vnum(e->color & 0xFFFFFF);
+                if (!kstricmp(name, "length")) return vnum(kstrlen(tf_text(in)));
+                if (!kstricmp(name, "scroll")) return vnum(in->scroll + 1);
+                if (!kstricmp(name, "maxscroll")) return vnum(tf_maxscroll(in));
+                if (!kstricmp(name, "bottomScroll")) return vnum(tf_bottom(in));
+                if (!kstricmp(name, "multiline")) return vbool(e->flags & 0x2000);
+                if (!kstricmp(name, "wordWrap")) return vbool(e->flags & 0x4000);
+                if (!kstricmp(name, "password")) return vbool(e->flags & 0x1000);
+                if (!kstricmp(name, "embedFonts")) return vbool(e->flags & 0x0001);
+                if (!kstricmp(name, "border")) return vbool(e->has_border);
+                if (!kstricmp(name, "background")) return vbool(e->has_bg);
+                if (!kstricmp(name, "borderColor")) return vnum(e->bc & 0xFFFFFF);
+                if (!kstricmp(name, "backgroundColor")) return vnum(e->bg & 0xFFFFFF);
+                if (!kstricmp(name, "type")) return vstr((e->flags & 0x0800) ? "dynamic" : "input");
+                if (!kstricmp(name, "maxChars")) return e->maxlen ? vnum(e->maxlen) : vobj(NULL);
+                if (!kstricmp(name, "textWidth")) return vnum(tf_text_width(in));
+                if (!kstricmp(name, "textHeight")) return vnum(tf_text_height(in));
+                if (!kstricmp(name, "variable")) return e->var && *e->var ? vstr(e->var) : vobj(NULL);
             }
             if (!kstricmp(name, "enabled")) return vbool(in->enabled);
             if (!kstricmp(name, "useHandCursor")) return vbool(in->hand);
@@ -650,11 +668,32 @@ static void set_member(val ov, val namev, val v) {
                 }
                 return;
             }
-            if (!kstricmp(name, "textColor")) {
-                etext_def *e = amalloc(sizeof *e);
-                *e = *in->et;
-                e->color = 0xFF000000u | ((u32)to_i32(v) & 0xFFFFFF);
-                in->et = e;
+            if (!kstricmp(name, "textColor")) { tf_own(in)->color = 0xFF000000u | ((u32)to_i32(v) & 0xFFFFFF); return; }
+            if (!kstricmp(name, "scroll")) { tf_scroll_to(in, to_i32(v)); return; }
+            if (!kstricmp(name, "border")) { tf_own(in)->has_border = (u8)to_bool(v); return; }
+            if (!kstricmp(name, "background")) { tf_own(in)->has_bg = (u8)to_bool(v); return; }
+            if (!kstricmp(name, "borderColor")) { tf_own(in)->bc = 0xFF000000u | ((u32)to_i32(v) & 0xFFFFFF); return; }
+            if (!kstricmp(name, "backgroundColor")) { tf_own(in)->bg = 0xFF000000u | ((u32)to_i32(v) & 0xFFFFFF); return; }
+            if (!kstricmp(name, "maxChars")) { tf_own(in)->maxlen = v.t == V_NULL ? 0 : to_i32(v); return; }
+            {
+                static const struct { const char *n; u16 bit; } fl[] = {
+                    {"multiline", 0x2000}, {"wordWrap", 0x4000}, {"password", 0x1000}, {"embedFonts", 0x0001}};
+                for (int i = 0; i < 4; i++)
+                    if (!kstricmp(name, fl[i].n)) {
+                        etext_def *e = tf_own(in);
+                        if (to_bool(v)) e->flags |= fl[i].bit; else e->flags &= (u16)~fl[i].bit;
+                        return;
+                    }
+            }
+            if (!kstricmp(name, "type")) {
+                etext_def *e = tf_own(in);
+                if (!kstricmp(as_tostring(v), "input")) e->flags &= (u16)~0x0800; else e->flags |= 0x0800;
+                if ((e->flags & 0x0800) && text_focus == in) text_set_focus(NULL);
+                return;
+            }
+            if (!kstricmp(name, "selectable")) {
+                etext_def *e = tf_own(in);
+                if (to_bool(v)) e->flags &= (u16)~0x0010; else e->flags |= 0x0010;
                 return;
             }
         }
@@ -2111,6 +2150,9 @@ static val nf_createTextField(ctx *c, val th, val *a, int n) {
     e->height = 240;
     e->color = 0xFF000000u;
     e->var = "";
+    e->flags = 0x0800; /* createTextField makes dynamic (read-only) fields */
+    e->bg = 0xFFFFFFFFu;
+    e->bc = 0xFF000000u;
     k->kind = K_ETEXT;
     k->et = e;
     k->tl = NULL;
@@ -2365,6 +2407,74 @@ static val nf_getTransform(ctx *c, val th, val *a, int n) {
     return vobj(o);
 }
 
+/* ---- text formats, selection, clipboard ---- */
+static inst *tf_this(val th) {
+    if (th.t != V_OBJ || th.u.o->kind != O_CLIP || !th.u.o->clip || th.u.o->clip->kind != K_ETEXT) return NULL;
+    return th.u.o->clip;
+}
+static val nf_setTextFormat(ctx *c, val th, val *a, int n) {
+    (void)c;
+    inst *in = tf_this(th);
+    if (!in || n < 1 || a[n - 1].t != V_OBJ) return vundef();
+    val f = a[n - 1];
+    val font = get_member(f, vstr("font")), size = get_member(f, vstr("size")), col = get_member(f, vstr("color"));
+    val al = get_member(f, vstr("align"));
+    u16 fid = 0;
+    if (font.t == V_STR) {
+        fid = font_by_name(font.u.s);
+        if (!fid) { etext_def *e = tf_own(in); e->font = 0; }
+    }
+    int align = -1;
+    if (al.t == V_STR) align = !kstricmp(al.u.s, "right") ? 1 : !kstricmp(al.u.s, "center") ? 2 : 0;
+    tf_set_font(in, fid, (size.t == V_NUM && size.u.n > 0) ? (float)(size.u.n * 20) : -1,
+                (col.t == V_NUM) ? (to_i32(col) & 0xFFFFFF) : -1, align);
+    return vundef();
+}
+static val nf_getTextFormat(ctx *c, val th, val *a, int n) {
+    (void)c; (void)a; (void)n;
+    inst *in = tf_this(th);
+    obj *o = new_obj(obj_proto);
+    if (!in || !o) return vobj(o);
+    etext_def *e = in->et;
+    font_def *fd = e->font && chars[e->font].type == CH_FONT ? chars[e->font].p : NULL;
+    set_own(o, "font", vstr(fd && fd->name ? fd->name : "_sans"));
+    set_own(o, "size", vnum(e->height / 20));
+    set_own(o, "color", vnum(e->color & 0xFFFFFF));
+    return vobj(o);
+}
+static val nf_replaceSel(ctx *c, val th, val *a, int n) {
+    (void)c;
+    inst *in = tf_this(th);
+    if (in) { const char *s = as_tostring(ARG(0)); tf_replace_sel(in, s, kstrlen(s)); }
+    return vundef();
+}
+static val nf_tfCopy(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; inst *in = tf_this(th); if (in) tf_copy(in, 0); return vundef(); }
+static val nf_tfCut(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; inst *in = tf_this(th); if (in) tf_copy(in, 1); return vundef(); }
+static val nf_tfPaste(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; inst *in = tf_this(th); if (in) tf_paste(in); return vundef(); }
+static val nf_tfUndo(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; inst *in = tf_this(th); if (in) tf_undo(in); return vundef(); }
+static val nf_tfSelAll(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; inst *in = tf_this(th); if (in) tf_select_all(in); return vundef(); }
+static val nf_tfSelText(ctx *c, val th, val *a, int n) {
+    (void)c; (void)a; (void)n;
+    inst *in = tf_this(th);
+    if (!in) return vstr("");
+    int x = in->sel < in->caret ? in->sel : in->caret, y = in->sel < in->caret ? in->caret : in->sel;
+    return vstr(astrndup(tf_text(in) + x, (u32)(y - x)));
+}
+static val nf_selBegin(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; inst *t = text_focus; return vnum(t ? (t->sel < t->caret ? t->sel : t->caret) : -1); }
+static val nf_selEnd(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; inst *t = text_focus; return vnum(t ? (t->sel < t->caret ? t->caret : t->sel) : -1); }
+static val nf_selCaret(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vnum(text_focus ? text_focus->caret : -1); }
+static val nf_setSelection(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    if (text_focus) tf_select(text_focus, to_i32(ARG(0)), to_i32(ARG(1)));
+    return vundef();
+}
+static val nf_setClipboard(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    const char *s = as_tostring(ARG(0));
+    clip_set(s, kstrlen(s));
+    return vundef();
+}
+
 /* Selection (keyboard focus for text fields) */
 static val nf_setFocus(ctx *c, val th, val *a, int n) {
     (void)th;
@@ -2487,6 +2597,447 @@ static obj *mk_class(const char *name, native_fn ctor, obj **proto_out) {
     return f;
 }
 static void num_const(obj *o, const char *name, num v) { set_hidden(o, name, vnum(v)); }
+
+/* ================================================================ FlashOS API */
+static obj *bmd_proto;
+
+static bdata *bd_of(val th) {
+    if (th.t != V_OBJ || !th.u.o->ext) return NULL;
+    bdata *d = th.u.o->ext;
+    return d->bm && d->bm->px ? d : NULL;
+}
+static val wrap_bitmap(bitmap *bm) {
+    if (!bm) return vobj(NULL);
+    obj *o = new_obj(bmd_proto);
+    bdata *d = amalloc(sizeof *d);
+    if (!o || !d) return vobj(NULL);
+    o->captured = 1;
+    d->bm = bm;
+    d->transparent = 1;
+    d->smooth = 1;
+    o->ext = d;
+    set_own(o, "width", vnum(bm->w));
+    set_own(o, "height", vnum(bm->h));
+    return vobj(o);
+}
+static val nf_BitmapData(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    int w = to_i32(ARG(0)), h = to_i32(ARG(1));
+    if (w < 1 || h < 1 || w > 2880 || h > 2880) return th;
+    int tr = n > 2 ? to_bool(a[2]) : 1;
+    u32 fill = n > 3 ? (u32)to_i32(a[3]) : 0xFFFFFFFFu;
+    if (!tr) fill |= 0xFF000000u;
+    bitmap *bm = amalloc(sizeof *bm);
+    bdata *d = amalloc(sizeof *d);
+    if (!bm || !d) return th;
+    bm->w = w; bm->h = h;
+    bm->px = amalloc((u32)w * h * 4);
+    if (!bm->px) return th;
+    for (u32 i = 0; i < (u32)w * h; i++) bm->px[i] = fill;
+    d->bm = bm;
+    d->transparent = (u8)tr;
+    d->smooth = 0;
+    th.u.o->ext = d;
+    th.u.o->captured = 1;
+    set_own(th.u.o, "width", vnum(w));
+    set_own(th.u.o, "height", vnum(h));
+    set_own(th.u.o, "transparent", vbool(tr));
+    return th;
+}
+static val nf_Rect(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    static const char *nm[] = {"x", "y", "width", "height"};
+    for (int i = 0; i < 4; i++) set_own(th.u.o, nm[i], vnum(i < n ? to_num(a[i]) : 0));
+    return th;
+}
+static val nf_Point(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    set_own(th.u.o, "x", vnum(n > 0 ? to_num(a[0]) : 0));
+    set_own(th.u.o, "y", vnum(n > 1 ? to_num(a[1]) : 0));
+    return th;
+}
+static u32 bd_col(bdata *d, u32 c) { return d->transparent ? c : (c | 0xFF000000u); }
+static void bd_fill(bdata *d, int x, int y, int w, int h, u32 c) {
+    bitmap *b = d->bm;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > b->w) w = b->w - x;
+    if (y + h > b->h) h = b->h - y;
+    for (int j = 0; j < h; j++) { u32 *r = b->px + (u32)(y + j) * b->w + x; for (int i = 0; i < w; i++) r[i] = c; }
+}
+static val nf_bmFillRect(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    if (!d || n < 2) return vundef();
+    val r = a[0];
+    bd_fill(d, to_i32(get_member(r, vstr("x"))), to_i32(get_member(r, vstr("y"))),
+            to_i32(get_member(r, vstr("width"))), to_i32(get_member(r, vstr("height"))), bd_col(d, (u32)to_i32(a[1])));
+    return vundef();
+}
+static val nf_bmSetPixel(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    int x = to_i32(ARG(0)), y = to_i32(ARG(1));
+    if (!d || x < 0 || y < 0 || x >= d->bm->w || y >= d->bm->h) return vundef();
+    u32 *p = &d->bm->px[(u32)y * d->bm->w + x];
+    *p = (*p & 0xFF000000u) | ((u32)to_i32(ARG(2)) & 0xFFFFFF);
+    return vundef();
+}
+static val nf_bmSetPixel32(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    int x = to_i32(ARG(0)), y = to_i32(ARG(1));
+    if (!d || x < 0 || y < 0 || x >= d->bm->w || y >= d->bm->h) return vundef();
+    d->bm->px[(u32)y * d->bm->w + x] = bd_col(d, (u32)to_i32(ARG(2)));
+    return vundef();
+}
+static val nf_bmGetPixel(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    int x = to_i32(ARG(0)), y = to_i32(ARG(1));
+    if (!d || x < 0 || y < 0 || x >= d->bm->w || y >= d->bm->h) return vnum(0);
+    return vnum(d->bm->px[(u32)y * d->bm->w + x] & 0xFFFFFF);
+}
+static val nf_bmGetPixel32(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    int x = to_i32(ARG(0)), y = to_i32(ARG(1));
+    if (!d || x < 0 || y < 0 || x >= d->bm->w || y >= d->bm->h) return vnum(0);
+    return vnum(d->bm->px[(u32)y * d->bm->w + x]);
+}
+static void disc(bdata *d, int cx, int cy, int r, u32 col) {
+    if (r <= 0) { if (cx >= 0 && cy >= 0 && cx < d->bm->w && cy < d->bm->h) d->bm->px[(u32)cy * d->bm->w + cx] = col; return; }
+    for (int y = -r; y <= r; y++) {
+        int w = 0;
+        while ((w + 1) * (w + 1) + y * y <= r * r + r) w++;
+        bd_fill(d, cx - w, cy + y, 2 * w + 1, 1, col);
+    }
+}
+/* FlashOS extra: drawLine(x0, y0, x1, y1, colour, thickness) with round ends */
+static val nf_bmDrawLine(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    if (!d) return vundef();
+    int x0 = to_i32(ARG(0)), y0 = to_i32(ARG(1)), x1 = to_i32(ARG(2)), y1 = to_i32(ARG(3));
+    u32 col = bd_col(d, (u32)to_i32(ARG(4)));
+    int t = n > 5 ? to_i32(a[5]) : 1, r = (t - 1) / 2;
+    if (r > 200) r = 200;
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y1 - y0 : y0 - y1;
+    int steps = dx > dy ? dx : dy;
+    if (steps > 10000) steps = 10000;
+    int every = r > 3 ? r / 2 : 1;
+    for (int i = 0; i <= steps; i++) {
+        if (i % every && i != steps) continue;
+        int x = steps ? x0 + (x1 - x0) * i / steps : x0, y = steps ? y0 + (y1 - y0) * i / steps : y0;
+        disc(d, x, y, r, col);
+    }
+    return vundef();
+}
+static int *ff_stack;
+static val nf_bmFloodFill(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th);
+    int x = to_i32(ARG(0)), y = to_i32(ARG(1));
+    if (!d || x < 0 || y < 0 || x >= d->bm->w || y >= d->bm->h) return vundef();
+    bitmap *b = d->bm;
+    u32 col = bd_col(d, (u32)to_i32(ARG(2))), old = b->px[(u32)y * b->w + x];
+    if (old == col) return vundef();
+    const int cap = 1 << 19;
+    if (!ff_stack) ff_stack = kmalloc(sizeof(int) * cap);
+    if (!ff_stack) return vundef();
+    int sp = 0;
+    ff_stack[sp++] = y * b->w + x;
+    while (sp) {
+        int p = ff_stack[--sp], py = p / b->w, px = p % b->w;
+        u32 *row = b->px + (u32)py * b->w;
+        if (row[px] != old) continue;
+        int l = px, r = px;
+        while (l > 0 && row[l - 1] == old) l--;
+        while (r < b->w - 1 && row[r + 1] == old) r++;
+        for (int i = l; i <= r; i++) row[i] = col;
+        for (int k = -1; k <= 1; k += 2) {
+            int ny = py + k;
+            if (ny < 0 || ny >= b->h) continue;
+            u32 *nr = b->px + (u32)ny * b->w;
+            for (int i = l; i <= r; i++)
+                if (nr[i] == old && (i == l || nr[i - 1] != old) && sp < cap) ff_stack[sp++] = ny * b->w + i;
+        }
+    }
+    return vundef();
+}
+static val nf_bmDispose(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; bdata *d = bd_of(th); if (d) d->bm->px = NULL; return vundef(); }
+static val nf_bmClone(ctx *c, val th, val *a, int n) {
+    (void)c; (void)a; (void)n;
+    bdata *d = bd_of(th);
+    if (!d) return vobj(NULL);
+    bitmap *bm = amalloc(sizeof *bm);
+    if (!bm) return vobj(NULL);
+    *bm = *d->bm;
+    bm->px = amalloc((u32)bm->w * bm->h * 4);
+    if (!bm->px) return vobj(NULL);
+    memcpy(bm->px, d->bm->px, (u32)bm->w * bm->h * 4);
+    return wrap_bitmap(bm);
+}
+static val nf_bmCopyPixels(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th), *src = bd_of(ARG(0));
+    if (!d || !src || n < 3) return vundef();
+    int sx = to_i32(get_member(a[1], vstr("x"))), sy = to_i32(get_member(a[1], vstr("y")));
+    int w = to_i32(get_member(a[1], vstr("width"))), h = to_i32(get_member(a[1], vstr("height")));
+    int dx = to_i32(get_member(a[2], vstr("x"))), dy = to_i32(get_member(a[2], vstr("y")));
+    bitmap *S = src->bm, *D = d->bm;
+    for (int y = 0; y < h; y++) {
+        int ys = sy + y, yd = dy + y;
+        if (ys < 0 || yd < 0 || ys >= S->h || yd >= D->h) continue;
+        for (int x = 0; x < w; x++) {
+            int xs = sx + x, xd = dx + x;
+            if (xs < 0 || xd < 0 || xs >= S->w || xd >= D->w) continue;
+            D->px[yd * D->w + xd] = S->px[ys * S->w + xs];
+        }
+    }
+    return vundef();
+}
+static val nf_attachBitmap(ctx *c, val th, val *a, int n) {
+    (void)c;
+    THIS_CLIP
+    bdata *d = bd_of(ARG(0));
+    if (!d) return vundef();
+    int dp = to_i32(ARG(1));
+    inst *o = inst_at_depth(cl, dp);
+    if (o) inst_remove(o);
+    inst *k = inst_create(cl, 0, dp, "", 1);
+    if (!k) return vundef();
+    k->bmpdata = d;
+    if (n > 3) d->smooth = (u8)to_bool(a[3]);
+    return vundef();
+}
+
+/* text files: UTF-8 on disk, Latin-1 inside Flash strings */
+static const char *bytes_to_str(const u8 *p, u32 n) {
+    char *o = amalloc(n + 1);
+    if (!o) return "";
+    u32 j = 0, i = 0;
+    if (n >= 3 && p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF) i = 3;
+    for (; i < n; i++) {
+        u8 c = p[i];
+        if (!c) continue;
+        if (c >= 0xC2 && c <= 0xC3 && i + 1 < n && (p[i + 1] & 0xC0) == 0x80) { o[j++] = (char)(((c & 3) << 6) | (p[i + 1] & 0x3F)); i++; continue; }
+        if (c >= 0xC4 && c < 0xF8 && i + 1 < n && (p[i + 1] & 0xC0) == 0x80) {
+            int extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : 1;
+            i += extra;
+            o[j++] = '?';
+            continue;
+        }
+        if (c == '\r') { if (i + 1 < n && p[i + 1] == '\n') continue; c = '\n'; }
+        o[j++] = (char)c;
+    }
+    o[j] = 0;
+    return o;
+}
+static u8 *str_to_utf8(const char *s, u32 *len) {
+    u32 n = kstrlen(s), k = 0;
+    u8 *o = amalloc(n * 2 + 1);
+    if (!o) return NULL;
+    for (u32 i = 0; i < n; i++) {
+        u8 c = (u8)s[i];
+        if (c < 0x80) o[k++] = c;
+        else { o[k++] = (u8)(0xC0 | (c >> 6)); o[k++] = (u8)(0x80 | (c & 0x3F)); }
+    }
+    *len = k;
+    return o;
+}
+static const u8 *file_bytes(const char *name, u32 *size) {
+    u8 *d = docs_read(name, size, amalloc);
+    if (d) return d;
+    kfile f;
+    if (fs_find(name, &f)) { *size = f.size; return f.data; }
+    return NULL;
+}
+static val nf_osFiles(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    const char *ext = n > 0 && a[0].t == V_STR ? a[0].u.s : "";
+    obj *arr = new_array();
+    if (!arr) return vobj(NULL);
+    int k = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        int cnt = pass == 0 ? docs_count() : fs_count();
+        for (int i = 0; i < cnt; i++) {
+            const char *nm;
+            u32 size;
+            const char *where;
+            if (pass == 0) { if (!docs_get(i, &nm, &size)) continue; where = docs_on_disk() ? "disk" : "memory"; }
+            else {
+                kfile f;
+                if (!fs_get(i, &f)) continue;
+                nm = f.name; size = f.size;
+                where = f.usb == 1 ? "usb" : f.usb == 2 ? "net" : f.usb == 3 ? "cd" : "system";
+            }
+            if (*ext) {
+                /* ext may list several: "jpg,png,gif" */
+                const char *dot = nm + kstrlen(nm);
+                while (dot > nm && *dot != '.') dot--;
+                if (*dot != '.') continue;
+                dot++;
+                int ok = 0;
+                for (const char *e = ext; *e;) {
+                    const char *q = e;
+                    while (*q && *q != ',') q++;
+                    if ((u32)(q - e) == kstrlen(dot) && !kstrnicmp(dot, e, (u32)(q - e))) ok = 1;
+                    e = *q ? q + 1 : q;
+                }
+                if (!ok) continue;
+            }
+            obj *o = new_obj(obj_proto);
+            if (!o) break;
+            set_own(o, "name", vstr(nm));
+            set_own(o, "size", vnum(size));
+            set_own(o, "where", vstr(where));
+            arr_set(arr, k++, vobj(o));
+        }
+    }
+    return vobj(arr);
+}
+static val nf_osRead(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    u32 size;
+    const u8 *d = file_bytes(as_tostring(ARG(0)), &size);
+    return d ? vstr(bytes_to_str(d, size)) : vobj(NULL);
+}
+static val nf_osWrite(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    u32 len;
+    u8 *d = str_to_utf8(as_tostring(ARG(1)), &len);
+    return vbool(d && docs_write(as_tostring(ARG(0)), d, len));
+}
+static val nf_osRemove(ctx *c, val th, val *a, int n) { (void)c; (void)th; return vbool(docs_remove(as_tostring(ARG(0)))); }
+static val nf_osExists(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    const char *nm = as_tostring(ARG(0));
+    for (int i = 0; i < docs_count(); i++) { const char *x; u32 sz; if (docs_get(i, &x, &sz) && !kstricmp(x, nm)) return vbool(1); }
+    kfile f;
+    return vbool(fs_find(nm, &f));
+}
+static val nf_osStorage(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(docs_on_disk() ? "disk" : "memory"); }
+static val nf_osFree(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vnum(docs_free_kb()); }
+static val nf_osLoadBitmap(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    u32 size;
+    const u8 *d = file_bytes(as_tostring(ARG(0)), &size);
+    return d ? wrap_bitmap(image_decode_file(d, size)) : vobj(NULL);
+}
+static val nf_osSaveBitmap(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    bdata *d = bd_of(ARG(1));
+    if (!d) return vbool(0);
+    u32 len;
+    u8 *b = bmp_encode(d->bm, &len);
+    return vbool(b && docs_write(as_tostring(ARG(0)), b, len));
+}
+static val nf_osClipboard(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(astrdup(clip_get(NULL))); }
+static val nf_osExit(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; quit_requested = 1; return vundef(); }
+static val nf_osMem(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vnum((num)(a_free_bytes() / 1024)); }
+
+/* ---- videos: v = FlashOS.openVideo(name) ---- */
+static obj *vid_proto;
+static flvvid *vid_of(val th) { return th.t == V_OBJ && th.u.o->proto == vid_proto ? th.u.o->ext : NULL; }
+static val nf_vPlay(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; flv_play(vid_of(th)); return vundef(); }
+static val nf_vPause(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; flv_pause(vid_of(th)); return vundef(); }
+static val nf_vStop(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; flv_stop(vid_of(th)); return vundef(); }
+static val nf_vSeek(ctx *c, val th, val *a, int n) {
+    (void)c;
+    num t = to_num(ARG(0));
+    if (!m_isnan(t) && t >= 0) flv_seek(vid_of(th), (u32)(t * 1000));
+    return vundef();
+}
+static val nf_vClose(ctx *c, val th, val *a, int n) {
+    (void)c; (void)a; (void)n;
+    flvvid *v = vid_of(th);
+    if (v) { flv_close(v); th.u.o->ext = NULL; }
+    return vundef();
+}
+static val nf_vTime(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; flvvid *v = vid_of(th); return vnum(v ? flv_time(v) / 1000.0 : 0); }
+static val nf_vDur(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; flvvid *v = vid_of(th); return vnum(v ? flv_duration(v) / 1000.0 : 0); }
+static val nf_vPlaying(ctx *c, val th, val *a, int n) { (void)c; (void)a; (void)n; flvvid *v = vid_of(th); return vbool(v && flv_playing(v)); }
+static void def_getter(obj *o, const char *name, native_fn f) {
+    set_own(o, name, vundef());
+    prop *p = own_prop(o, name);
+    if (p) { p->getter = new_fn(f); p->dontenum = 1; }
+}
+static val nf_osOpenVideo(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    u32 size;
+    const u8 *d = file_bytes(as_tostring(ARG(0)), &size);
+    flvvid *v = d ? flv_open(d, size) : NULL;
+    if (!v) return vobj(NULL);
+    obj *o = new_obj(vid_proto);
+    if (!o) return vobj(NULL);
+    o->captured = 1;
+    o->ext = v;
+    set_own(o, "width", vnum(flv_width(v)));
+    set_own(o, "height", vnum(flv_height(v)));
+    val bm = wrap_bitmap(flv_bitmap(v));
+    set_own(o, "bitmap", bm);
+    return vobj(o);
+}
+static void flashos_video_api(obj *f) {
+    vid_proto = new_obj(obj_proto);
+    vid_proto->captured = 1;
+    def_native(vid_proto, "play", nf_vPlay);
+    def_native(vid_proto, "pause", nf_vPause);
+    def_native(vid_proto, "stop", nf_vStop);
+    def_native(vid_proto, "seek", nf_vSeek);
+    def_native(vid_proto, "close", nf_vClose);
+    def_getter(vid_proto, "time", nf_vTime);
+    def_getter(vid_proto, "duration", nf_vDur);
+    def_getter(vid_proto, "playing", nf_vPlaying);
+    def_native(f, "openVideo", nf_osOpenVideo);
+}
+
+static void flashos_api(void) {
+    obj *f = new_obj(obj_proto);
+    f->captured = 1;
+    set_hidden(G, "FlashOS", vobj(f));
+    set_hidden(f, "version", vstr("1.0"));
+    def_native(f, "files", nf_osFiles);
+    def_native(f, "read", nf_osRead);
+    def_native(f, "write", nf_osWrite);
+    def_native(f, "remove", nf_osRemove);
+    def_native(f, "exists", nf_osExists);
+    def_native(f, "storage", nf_osStorage);
+    def_native(f, "freeKB", nf_osFree);
+    def_native(f, "loadBitmap", nf_osLoadBitmap);
+    def_native(f, "saveBitmap", nf_osSaveBitmap);
+    def_native(f, "getClipboard", nf_osClipboard);
+    def_native(f, "memoryKB", nf_osMem);
+    def_native(f, "exit", nf_osExit);
+    flashos_video_api(f);
+
+    obj *ctor = mk_class("BitmapData", nf_BitmapData, &bmd_proto);
+    def_native(bmd_proto, "fillRect", nf_bmFillRect);
+    def_native(bmd_proto, "setPixel", nf_bmSetPixel);
+    def_native(bmd_proto, "setPixel32", nf_bmSetPixel32);
+    def_native(bmd_proto, "getPixel", nf_bmGetPixel);
+    def_native(bmd_proto, "getPixel32", nf_bmGetPixel32);
+    def_native(bmd_proto, "floodFill", nf_bmFloodFill);
+    def_native(bmd_proto, "drawLine", nf_bmDrawLine);
+    def_native(bmd_proto, "dispose", nf_bmDispose);
+    def_native(bmd_proto, "clone", nf_bmClone);
+    def_native(bmd_proto, "copyPixels", nf_bmCopyPixels);
+    obj *rect = mk_class("Rectangle", nf_Rect, NULL);
+    obj *pt = mk_class("Point", nf_Point, NULL);
+    obj *flash = new_obj(obj_proto), *disp = new_obj(obj_proto), *geom = new_obj(obj_proto);
+    flash->captured = disp->captured = geom->captured = 1;
+    set_hidden(G, "flash", vobj(flash));
+    set_hidden(flash, "display", vobj(disp));
+    set_hidden(flash, "geom", vobj(geom));
+    set_hidden(disp, "BitmapData", vobj(ctor));
+    set_hidden(geom, "Rectangle", vobj(rect));
+    set_hidden(geom, "Point", vobj(pt));
+    def_native(clip_proto, "attachBitmap", nf_attachBitmap);
+}
 
 void as_init(void) {
     free_objs = NULL;
@@ -2633,6 +3184,7 @@ void as_init(void) {
     set_hidden(sys, "security", vobj(sec));
     def_native(sec, "allowDomain", nf_noop);
     set_hidden(sys, "useCodepage", vbool(1));
+    def_native(sys, "setClipboard", nf_setClipboard);
 
     mk_class("MovieClip", nf_noop, &clip_proto);
     def_native(clip_proto, "play", nf_play);
@@ -2675,8 +3227,18 @@ void as_init(void) {
     def_native(clip_proto, "clear", nf_clear);
     mk_class("Button", nf_noop, &button_proto);
     mk_class("TextField", nf_noop, &text_proto);
-    def_native(text_proto, "setTextFormat", nf_noop);
-    def_native(text_proto, "setNewTextFormat", nf_noop);
+    def_native(text_proto, "setTextFormat", nf_setTextFormat);
+    def_native(text_proto, "setNewTextFormat", nf_setTextFormat);
+    def_native(text_proto, "getTextFormat", nf_getTextFormat);
+    def_native(text_proto, "getNewTextFormat", nf_getTextFormat);
+    def_native(text_proto, "replaceSel", nf_replaceSel);
+    def_native(text_proto, "replaceText", nf_replaceSel);
+    def_native(text_proto, "copy", nf_tfCopy);
+    def_native(text_proto, "cut", nf_tfCut);
+    def_native(text_proto, "paste", nf_tfPaste);
+    def_native(text_proto, "undo", nf_tfUndo);
+    def_native(text_proto, "selectAll", nf_tfSelAll);
+    def_native(text_proto, "getSelectedText", nf_tfSelText);
     def_native(text_proto, "removeTextField", nf_removeMC);
     def_native(text_proto, "getDepth", nf_getDepth);
     def_native(text_proto, "swapDepths", nf_swapDepths);
@@ -2687,10 +3249,10 @@ void as_init(void) {
     set_hidden(G, "Selection", vobj(selection));
     def_native(selection, "setFocus", nf_setFocus);
     def_native(selection, "getFocus", nf_getFocus);
-    def_native(selection, "setSelection", nf_noop);
-    def_native(selection, "getBeginIndex", nf_noop);
-    def_native(selection, "getEndIndex", nf_noop);
-    def_native(selection, "getCaretIndex", nf_noop);
+    def_native(selection, "setSelection", nf_setSelection);
+    def_native(selection, "getBeginIndex", nf_selBegin);
+    def_native(selection, "getEndIndex", nf_selEnd);
+    def_native(selection, "getCaretIndex", nf_selCaret);
 
     mk_class("Color", nf_Color, &color_proto);
     def_native(color_proto, "setRGB", nf_setRGB);
@@ -2733,6 +3295,7 @@ void as_init(void) {
     def_native(G, "fscommand", nf_noop);
     def_native(G, "updateAfterEvent", nf_noop);
     def_native(G, "ASSetPropFlags", nf_noop);
+    flashos_api();
     num_const(G, "NaN", m_nan());
     num_const(G, "Infinity", m_inf());
 }

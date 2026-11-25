@@ -460,7 +460,7 @@ static void handle(char *line) {
         int n = cd_scan();
         con_puts("\r ");
         put_num((u32)n);
-        con_puts(" SWF file(s) found on CDs / ISO images. Type LS.\n");
+        con_puts(" file(s) found on CDs / ISO images. Type LS.\n");
     }
     else if (!kstricmp(line, "ping")) cmd_ping(arg);
     else if (!kstricmp(line, "get") || !kstricmp(line, "download")) cmd_get(arg);

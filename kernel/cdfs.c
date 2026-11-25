@@ -13,9 +13,15 @@ static int found;
 
 static u32 le32(const u8 *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
 
+/* SWF movies, plus files that apps open: text, pictures and videos */
 static int is_swf(const char *n) {
+    static const char *ext[] = {".swf", ".txt", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".flv", 0};
     u32 l = kstrlen(n);
-    return l > 4 && !kstricmp(n + l - 4, ".swf");
+    for (int i = 0; ext[i]; i++) {
+        u32 e = kstrlen(ext[i]);
+        if (l > e && !kstricmp(n + l - e, ext[i])) return 1;
+    }
+    return 0;
 }
 
 static void get_name(const u8 *r, int joliet, char *out) {
@@ -43,7 +49,8 @@ static void load_file(const char *name, u32 lba, u32 size) {
     if (!buf || size + (16u << 20) > cap) return;
     u32 secs = (size + 2047) / 2048;
     if (!atapi_read(drv, lba, buf, secs)) return;
-    if (!((buf[0] == 'F' || buf[0] == 'C' || buf[0] == 'Z') && buf[1] == 'W' && buf[2] == 'S')) return;
+    u32 l = kstrlen(name);
+    if (l > 4 && !kstricmp(name + l - 4, ".swf") && !((buf[0] == 'F' || buf[0] == 'C' || buf[0] == 'Z') && buf[1] == 'W' && buf[2] == 'S')) return;
     if (fs_add_file(name, buf, size, 3)) found++;
 }
 

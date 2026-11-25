@@ -1,0 +1,25 @@
+Welcome to Flash Notepad!
+
+Flash Notepad is a little app for FlashOS. It has five tabs:
+
+  Text        write and read .txt files
+  Draw        paint with the mouse and save your drawing as a .bmp picture
+  Pictures    look at .jpg .png .gif and .bmp pictures
+  Video       watch .flv videos (Sorenson Spark with MP3 sound)
+  Calculator  add, subtract, multiply and divide
+
+The File and Edit menus are in the cyan border at the top.
+
+Keyboard shortcuts
+  Ctrl+N  new          Ctrl+O  open        Ctrl+S  save
+  Ctrl+Z  undo         Ctrl+X / C / V      cut, copy, paste
+  Ctrl+A  select all   Ctrl+F  find        F5  time and date
+  Ctrl+1 ... Ctrl+5  switch tabs
+  F9 / F10 / F11  sound off, quieter, louder
+  F12  close Flash Notepad
+
+When FlashOS is installed on the hard disk, everything you save is
+kept on the disk, even after you restart. When FlashOS runs from a CD,
+your files stay in memory until you restart.
+
+Have fun!

@@ -754,3 +754,145 @@ void draw_cursor(int x, int y, int hand) {
         }
     cur_x = x; cur_y = y; cur_w = w * CUR_SCALE; cur_h = h * CUR_SCALE;
 }
+
+/* ---------------------------------------------------------------- BitmapData */
+/* m maps bitmap pixels (1 px = 20 twips) to the screen */
+void draw_bitmap(const bitmap *b, mat m, const cxf *cx, int smooth) {
+    if (!b || !b->px || b->w <= 0 || b->h <= 0) return;
+    float W = b->w * 20.0f, H = b->h * 20.0f;
+    float xs[4] = {m.tx, m.a * W + m.tx, m.c * H + m.tx, m.a * W + m.c * H + m.tx};
+    float ys[4] = {m.ty, m.b * W + m.ty, m.d * H + m.ty, m.b * W + m.d * H + m.ty};
+    float x0 = xs[0], x1 = xs[0], y0 = ys[0], y1 = ys[0];
+    for (int i = 1; i < 4; i++) {
+        if (xs[i] < x0) x0 = xs[i];
+        if (xs[i] > x1) x1 = xs[i];
+        if (ys[i] < y0) y0 = ys[i];
+        if (ys[i] > y1) y1 = ys[i];
+    }
+    int ix0 = kfloor(x0), ix1 = kfloor(x1 + 0.999f), iy0 = kfloor(y0), iy1 = kfloor(y1 + 0.999f);
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > scr_w) ix1 = scr_w;
+    if (iy1 > scr_h) iy1 = scr_h;
+    mat iv = mat_inv(m);
+    int cxid = cx_is_id(cx);
+    /* smoothing only helps when shrinking or enlarging a lot */
+    float sc = ksqrt(m.a * m.a + m.b * m.b) * 20.0f;
+    int bil = smooth && (sc < 0.95f || sc > 1.05f);
+    u32 *bb = video_bb();
+    for (int y = iy0; y < iy1; y++) {
+        float fy = y + 0.5f;
+        float u = (iv.a * (ix0 + 0.5f) + iv.c * fy + iv.tx) / 20.0f, v = (iv.b * (ix0 + 0.5f) + iv.d * fy + iv.ty) / 20.0f;
+        float du = iv.a / 20.0f, dv = iv.b / 20.0f;
+        u32 *row = bb + y * scr_w;
+        const u8 *am = mask_active ? mask_active + y * scr_w : NULL;
+        for (int x = ix0; x < ix1; x++, u += du, v += dv) {
+            if (u < 0 || v < 0 || u >= b->w || v >= b->h) continue;
+            u32 c;
+            if (bil) {
+                float fu = u - 0.5f, fv = v - 0.5f;
+                int bx = kfloor(fu), by = kfloor(fv);
+                u32 tx = (u32)((fu - bx) * 256), ty = (u32)((fv - by) * 256);
+                int bx1 = bx + 1, by1 = by + 1;
+                if (bx < 0) bx = 0;
+                if (by < 0) by = 0;
+                if (bx1 >= b->w) bx1 = b->w - 1;
+                if (by1 >= b->h) by1 = b->h - 1;
+                u32 p00 = b->px[by * b->w + bx], p01 = b->px[by * b->w + bx1], p10 = b->px[by1 * b->w + bx], p11 = b->px[by1 * b->w + bx1];
+                c = 0;
+                for (int sh = 0; sh < 32; sh += 8) {
+                    u32 t0 = ((p00 >> sh & 255) * (256 - tx) + (p01 >> sh & 255) * tx) >> 8;
+                    u32 t1 = ((p10 >> sh & 255) * (256 - tx) + (p11 >> sh & 255) * tx) >> 8;
+                    c |= ((t0 * (256 - ty) + t1 * ty) >> 8) << sh;
+                }
+            } else {
+                c = b->px[(int)v * b->w + (int)u];
+            }
+            if (!cxid) c = cx_apply(cx, c);
+            u32 a = 256;
+            if (am) { a = am[x] * 256u / 255; if (!a) continue; }
+            if (mask_write) { u32 cv = (c >> 24) * a / 256; if (cv > mask_write[y * scr_w + x]) mask_write[y * scr_w + x] = (u8)cv; continue; }
+            blend(&row[x], c, a);
+        }
+    }
+}
+
+/* ---------------------------------------------------------------- glyph cache */
+/* Text glyphs are rasterised once per size and quarter-pixel position and
+ * then blitted, instead of filling their outlines every frame. */
+typedef struct { const shape *g; u32 key; s16 ox, oy; u16 w, h; u8 *a; } gce;
+#define GC_SIZE 8192
+static gce *gcache;
+static u8 *gc_tmp;
+static int gc_count;
+
+void glyph_cache_reset(void) { gcache = NULL; gc_count = 0; }
+
+void draw_glyph(shape *g, mat m, const cxf *cx, u32 color) {
+    if (!g) return;
+    if (m.b != 0 || m.c != 0 || m.a <= 0 || m.a - m.d > 1e-5f || m.d - m.a > 1e-5f || m.a * g->bounds[1] > 400) {
+        draw_shape(g, m, cx, color);
+        return;
+    }
+    u32 col = cx_apply(cx, color);
+    if (!(col >> 24)) return;
+    if (!gcache) {
+        gcache = amalloc(sizeof(gce) * GC_SIZE);
+        if (!gcache) { draw_shape(g, m, cx, color); return; }
+        memset(gcache, 0, sizeof(gce) * GC_SIZE);
+        gc_count = 0;
+    }
+    if (!gc_tmp) { gc_tmp = kmalloc((u32)scr_w * scr_h); if (!gc_tmp) { draw_shape(g, m, cx, color); return; } memset(gc_tmp, 0, (u32)scr_w * scr_h); }
+    int ix = kfloor(m.tx), iy = kfloor(m.ty + 0.5f);
+    int phase = (int)((m.tx - ix) * 4);
+    if (phase > 3) phase = 3;
+    u32 key = ((u32)(m.a * 1048576.0f) << 2) | (u32)phase;
+    u32 hsh = ((u32)(unsigned long)g * 2654435761u ^ key * 40503u) & (GC_SIZE - 1);
+    gce *e = NULL;
+    for (int probe = 0; probe < 16; probe++) {
+        gce *c = &gcache[(hsh + probe) & (GC_SIZE - 1)];
+        if (c->g == g && c->key == key) { e = c; break; }
+        if (!c->g) {
+            if (gc_count > GC_SIZE * 3 / 4) break; /* full: draw directly */
+            /* rasterise into the scratch buffer at (pad, pad) */
+            float bx0 = g->bounds[0] * m.a, by0 = g->bounds[2] * m.a, bx1 = g->bounds[1] * m.a, by1 = g->bounds[3] * m.a;
+            int ox = kfloor(bx0) - 2, oy = kfloor(by0) - 2;
+            int w = kfloor(bx1) - ox + 4, h = kfloor(by1) - oy + 4;
+            if (w <= 0 || h <= 0 || w > scr_w || h > scr_h) break;
+            mat gm = {m.a, 0, 0, m.a, (float)-ox + phase * 0.25f, (float)-oy};
+            u8 *saved_w = mask_write, *saved_a = mask_active;
+            mask_write = gc_tmp;
+            mask_active = NULL;
+            draw_shape(g, gm, &CX_ID, 0xFF000000u);
+            mask_write = saved_w;
+            mask_active = saved_a;
+            c->a = amalloc((u32)w * h);
+            if (!c->a) { for (int y = 0; y < h; y++) memset(gc_tmp + y * scr_w, 0, (u32)w); break; }
+            for (int y = 0; y < h; y++) { memcpy(c->a + y * w, gc_tmp + y * scr_w, (u32)w); memset(gc_tmp + y * scr_w, 0, (u32)w); }
+            c->g = g; c->key = key; c->ox = (s16)ox; c->oy = (s16)oy; c->w = (u16)w; c->h = (u16)h;
+            gc_count++;
+            e = c;
+            break;
+        }
+    }
+    if (!e) { draw_shape(g, m, cx, color); return; }
+    u32 *bb = video_bb();
+    int x0 = ix + e->ox, y0 = iy + e->oy;
+    for (int y = 0; y < e->h; y++) {
+        int sy = y0 + y;
+        if (sy < 0 || sy >= scr_h) continue;
+        const u8 *src = e->a + y * e->w;
+        u32 *row = bb + sy * scr_w;
+        const u8 *am = mask_active ? mask_active + sy * scr_w : NULL;
+        for (int x = 0; x < e->w; x++) {
+            u32 a = src[x];
+            if (!a) continue;
+            int sx = x0 + x;
+            if (sx < 0 || sx >= scr_w) continue;
+            a = a * 256u / 255;
+            if (am) { a = a * am[sx] / 255; if (!a) continue; }
+            if (mask_write) { u32 v = a * (col >> 24) / 256; if (v > mask_write[sy * scr_w + sx]) mask_write[sy * scr_w + sx] = (u8)v; continue; }
+            blend(&row[sx], col, a);
+        }
+    }
+}

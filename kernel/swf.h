@@ -77,12 +77,20 @@ typedef struct {
 } timeline;
 
 typedef struct { int w, h; u32 *px; } bitmap;
+typedef struct { bitmap *bm; u8 transparent, smooth; } bdata; /* BitmapData */
 
 typedef struct { u8 states; u16 id; s16 depth; mat m; cxf cx; } btnrec;
 typedef struct { u16 cond; const u8 *code; u32 len; } btnact;
 typedef struct { int nrec, nact; btnrec *rec; btnact *act; u16 snd[4]; } button_def;
 
-typedef struct { int nglyph; shape **glyph; u16 *code; float em; } font_def;
+typedef struct {
+    int nglyph; shape **glyph; u16 *code; float em;
+    const char *name;
+    float ascent, descent, leading; /* em units */
+    float *adv;                     /* per glyph, em units (NULL: no layout) */
+    s16 map[256];                   /* Latin-1 char -> glyph index, -1 none */
+    int mapped;
+} font_def;
 typedef struct { u16 font; u32 color; float x, y, height; int n; u16 *glyph; float *adv; } textrun;
 typedef struct { s32 bounds[4]; mat m; int nrun; textrun *run; } text_def;
 typedef struct {
@@ -93,6 +101,8 @@ typedef struct {
     int align;
     const char *var, *init;
     int maxlen;
+    u8 has_bg, has_border;
+    u32 bg, bc;
 } etext_def;
 
 enum { CH_NONE, CH_SHAPE, CH_SPRITE, CH_BITMAP, CH_BUTTON, CH_FONT, CH_TEXT, CH_ETEXT, CH_SOUND };
@@ -136,6 +146,12 @@ struct inst {
     etext_def *et;
     dyndraw *dyn;
     inst **btn_kids; /* sprite instances inside a button */
+    /* text fields: editable buffer, caret, selection, scrolling */
+    u32 tlen, tcap;
+    int caret, sel, scroll;
+    void *undo;
+    /* attached BitmapData (attachBitmap) */
+    void *bmpdata;
 };
 
 /* ---------------- player API used by the ActionScript engine ---------------- */
@@ -147,6 +163,7 @@ extern int quit_requested;
 extern int last_key_code, last_key_ascii;
 
 void *amalloc(u32 n);
+u32 a_free_bytes(void);
 char *astrdup(const char *s);
 char *astrndup(const char *s, u32 n);
 
@@ -225,6 +242,11 @@ u32 cx_apply(const cxf *c, u32 col);
 #endif
 
 /* ---------------- images (image.c) ---------------- */
+bitmap *image_decode_file(const u8 *d, u32 n);       /* JPEG, PNG, GIF or BMP */
+u8 *bmp_encode(const bitmap *b, u32 *len);           /* 24-bit BMP */
+void draw_bitmap(const bitmap *b, mat m, const cxf *cx, int smooth);
+void draw_glyph(shape *g, mat m, const cxf *cx, u32 color);
+void glyph_cache_reset(void);
 bitmap *image_decode_tag(int code, const u8 *d, u32 n);
 void image_set_tables(const u8 *d, u32 n);
 
@@ -237,6 +259,48 @@ u8 *mask_get_active(void);
 /* ---------------- text input (player.c) ---------------- */
 extern inst *text_focus;
 void text_set_focus(inst *in);
+void text_changed(inst *in);          /* var binding + onChanged */
+u16 font_by_name(const char *name);   /* embedded font character id, 0 none */
+extern chr *chars;
+
+/* ---------------- FLV video (flv.c) ---------------- */
+typedef struct flvvid flvvid;
+flvvid *flv_open(const u8 *data, u32 size);
+bitmap *flv_bitmap(flvvid *v);
+int flv_width(flvvid *v);
+int flv_height(flvvid *v);
+u32 flv_duration(flvvid *v);
+u32 flv_time(flvvid *v);
+int flv_playing(flvvid *v);
+void flv_play(flvvid *v);
+void flv_pause(flvvid *v);
+void flv_stop(flvvid *v);
+void flv_seek(flvvid *v, u32 ms);
+void flv_close(flvvid *v);
+void flv_tick_all(void);
+void flv_reset_all(void);
+
+/* ---------------- text fields (textfield.c) ---------------- */
+void tf_render(inst *in, mat m, const cxf *c);
+void tf_key(inst *in, int code, int ascii);
+void tf_mouse(inst *in, float sx, float sy, int press, int shift); /* stage twips */
+void tf_set_text(inst *in, const char *s, u32 n);
+const char *tf_text(inst *in);         /* NUL-terminated contents */
+int tf_maxscroll(inst *in);            /* 1-based like Flash */
+int tf_bottom(inst *in);
+void tf_scroll_to(inst *in, int line1);
+void tf_select(inst *in, int a, int b);
+void tf_replace_sel(inst *in, const char *s, u32 n);
+void tf_copy(inst *in, int cut);
+void tf_paste(inst *in);
+void tf_undo(inst *in);
+void tf_select_all(inst *in);
+etext_def *tf_own(inst *in);           /* private, writable format */
+void tf_set_font(inst *in, u16 font, float height_twips, int color, int align);
+void clip_set(const char *s, u32 n);
+const char *clip_get(u32 *n);
+int tf_text_width(inst *in);           /* pixels of the longest line */
+int tf_text_height(inst *in);
 
 /* ---------------- sound (player.c) ---------------- */
 typedef struct {

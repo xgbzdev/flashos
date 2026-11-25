@@ -129,6 +129,15 @@ int fs_add_download(const char *name, const u8 *data, u32 len);
 int fs_add_file(const char *name, const u8 *data, u32 len, int tag); /* tag 2 NET, 3 CD */
 void fs_drop_tag(int tag);
 
+/* documents saved by apps (docs.c) */
+int docs_on_disk(void);
+int docs_count(void);
+int docs_get(int idx, const char **name, u32 *size);
+u8 *docs_read(const char *name, u32 *size, void *(*alloc)(u32));
+int docs_write(const char *name, const u8 *data, u32 n);
+int docs_remove(const char *name);
+u32 docs_free_kb(void);
+
 /* ---- inflate.c ---- */
 int inflate_raw(const u8 *src, u32 srclen, u8 *dst, u32 dstlen, u32 *outlen);
 

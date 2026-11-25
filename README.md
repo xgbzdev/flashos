@@ -38,6 +38,7 @@ appears.
 | `INSTALL`          | install FlashOS on the hard disk (only when started from the ISO) |
 | `RESCAN`           | read game CDs / ISO images again               |
 | `VOL [0-100/MUTE]` | sound volume                                   |
+| `TIME`             | count 10 seconds, to check the clock speed     |
 | `NET`              | connect to the wired network, show IP / status |
 | `PING <host>`      | test the connection                            |
 | `GET <http://url>` | download a SWF from the internet               |
@@ -157,13 +158,66 @@ Not supported yet: ActionScript 3 (Flash 9+), progressive JPEGs, filters
 (blur, glow…), morph shapes, Nellymoser/Speex sound, Intel HD Audio sound cards,
 and LZMA-compressed `ZWS` files.
 
+## Flash Notepad
+
+Flash Notepad is an app for FlashOS, made as a SWF in `apps/notepad/`. CI
+publishes it on the Releases page as **`Flash-notepad.iso`**, a data CD
+labelled *Flash notepad* with `FlashNotepad.swf` and a sample text, picture
+and video. Insert it as a second CD and type `flashnotepad`.
+
+* **Text**: a multi-line editor with word wrap, a scroll bar, selection
+  with the mouse or Shift+arrows, cut/copy/paste, undo, find, and time and date.
+  It opens and saves `.txt` files.
+* **Draw**: pencil, eraser, fill bucket, line, rectangle and circle, with 4
+  sizes and 16 colours. Drawings are saved as `.bmp` pictures.
+* **Pictures**: view `.jpg`, `.png`, `.gif` and `.bmp` files.
+* **Video**: play `.flv` videos with the Sorenson Spark codec and MP3, PCM or
+  ADPCM sound. To make one:
+  `ffmpeg -i in.mp4 -c:v flv -q:v 5 -c:a libmp3lame -ar 44100 out.flv`
+* **Calculator**.
+
+The UI uses Comic Neue (SIL Open Font License, see
+`apps/notepad/ComicNeue-OFL.txt`), a free font made to look like Comic Sans.
+It has cyan borders, and the File, Edit and Help menus sit in the top border.
+
+Files are saved in a documents area on the hard disk where FlashOS is
+installed (from 16 MB in; reinstalling keeps it). When FlashOS runs from a CD,
+saved files stay in memory until restart. CDs and USB sticks are read-only;
+FlashOS now also loads `.txt .jpg .jpeg .png .gif .bmp .flv` files from them.
+
+### Writing your own apps
+
+`tools/asc.py` compiles ActionScript 1.0 into a SWF. It can embed a TrueType
+font for text fields:
+
+```sh
+python3 tools/asc.py app.as app.swf --size 1024x768 --fps 30 --font my.ttf "My Font"
+```
+
+Besides the standard AS1/AS2 classes, FlashOS apps can use:
+
+| API | |
+|---|---|
+| `FlashOS.files(ext)` | list files, e.g. `FlashOS.files("jpg,png")`: `[{name, size, where}]` with `where` = `disk`, `memory`, `cd`, `usb`, `net` or `system` |
+| `FlashOS.read(name)` / `FlashOS.write(name, text)` | text files (UTF-8 on disk) |
+| `FlashOS.remove(name)`, `FlashOS.exists(name)` | |
+| `FlashOS.storage()`, `FlashOS.freeKB()` | `"disk"` or `"memory"`, free space |
+| `FlashOS.loadBitmap(name)` / `FlashOS.saveBitmap(name, bmp)` | pictures as `BitmapData` |
+| `FlashOS.openVideo(name)` | `.flv` video: `play() pause() stop() seek(s) close()`, `time duration playing width height bitmap` |
+| `FlashOS.getClipboard()`, `System.setClipboard(s)` | clipboard |
+| `FlashOS.exit()` | back to the prompt |
+| `flash.display.BitmapData` | `fillRect setPixel(32) getPixel(32) floodFill copyPixels clone dispose`, plus `drawLine(x0, y0, x1, y1, colour, size)` |
+| `clip.attachBitmap(bmp, depth, snap, smooth)` | show a BitmapData |
+| text fields | `multiline wordWrap embedFonts border background scroll maxscroll`, `TextFormat` (font, size, colour, align), `replaceSel`, `Selection.setSelection`, `copy() cut() paste() undo() selectAll()` |
+
 ## Build
 
 You need `nasm`, `gcc` with 32-bit support, `make` and `python3`:
 
 ```sh
 sudo apt install nasm gcc-multilib make python3 qemu-system-x86
-make            # -> build/FlashOS.iso  (about 100 KB)
+make            # -> build/FlashOS.iso  (about 300 KB)
+make apps       # -> build/apps/FlashNotepad.swf (needs python3-fonttools)
 make run        # boot it as a CD in QEMU
 make run-usb    # boot it as a USB disk in QEMU
 ```

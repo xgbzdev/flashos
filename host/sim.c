@@ -59,7 +59,12 @@ static void advance(u32 ms) {
         if (e->done || now < e->t) continue;
         e->done = 1;
         if (!strcmp(e->kind, "shot")) shot(e->text);
-        else if (!strcmp(e->kind, "end")) { printf("  [%6u ms] end\n", now); exit(0); }
+        else if (!strcmp(e->kind, "end")) {
+            extern u64 host_render_ns, host_frames;
+            if (host_frames) printf("  render: %llu frames, %.2f ms per frame\n", (unsigned long long)host_frames, host_render_ns / 1e6 / host_frames);
+            printf("  [%6u ms] end\n", now);
+            exit(0);
+        }
         else if (!strcmp(e->kind, "key")) {
             for (char *c = e->text; *c; c++) {
                 int ch = (u8)*c;
@@ -68,11 +73,22 @@ static void advance(u32 ms) {
                 else if (ch == '\\' && c[1] == 'd') { ch = KEY_DOWN; c++; }
                 cq[cq_t++ % 512] = ch;
             }
+        } else if (!strcmp(e->kind, "type")) { /* key events for a running SWF */
+            for (char *c = e->text; *c; c++) {
+                int ch = (u8)*c, code;
+                if (ch == '\\' && c[1] == 'n') { ch = 13; c++; }
+                code = ch >= 'a' && ch <= 'z' ? ch - 32 : ch;
+                kev(code, 1, ch);
+                kev(code, 0, 0);
+            }
         } else if (!strcmp(e->kind, "kd")) {
             int code = atoi(e->text);
             kev(code, 1, (code >= 65 && code <= 90) ? code + 32 : code);
         } else if (!strcmp(e->kind, "ku")) {
             kev(atoi(e->text), 0, 0);
+        } else if (!strcmp(e->kind, "reset")) { /* restart render statistics */
+            extern u64 host_render_ns, host_frames;
+            host_render_ns = host_frames = 0;
         } else if (!strcmp(e->kind, "mouse")) {
             sscanf(e->text, "%d %d", &mx, &my);
         } else if (!strcmp(e->kind, "mdown")) mb = 1;

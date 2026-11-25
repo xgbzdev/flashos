@@ -416,3 +416,67 @@ bitmap *image_decode_tag(int code, const u8 *d, u32 n) {
     }
     return bm;
 }
+
+/* ---------------------------------------------------------------- BMP */
+static u32 le32b(const u8 *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
+static bitmap *bmp_decode(const u8 *d, u32 n) {
+    if (n < 54) return NULL;
+    u32 off = le32b(d + 10), hs = le32b(d + 14);
+    s32 w = (s32)le32b(d + 18), h = (s32)le32b(d + 22);
+    int bpp = d[28] | (d[29] << 8);
+    u32 comp = le32b(d + 30);
+    if (hs < 40 || w <= 0 || w > 8192 || !h || h > 8192 || h < -8192 || (comp != 0 && comp != 3)) return NULL;
+    int flip = h > 0;
+    if (h < 0) h = -h;
+    if (bpp != 24 && bpp != 32 && bpp != 8) return NULL;
+    u32 stride = (((u32)w * bpp + 31) / 32) * 4;
+    if (off + stride * (u32)h > n) return NULL;
+    const u8 *pal = d + 14 + hs;
+    bitmap *bm = amalloc(sizeof *bm);
+    if (!bm) return NULL;
+    bm->w = w; bm->h = h;
+    bm->px = amalloc((u32)w * h * 4);
+    if (!bm->px) return NULL;
+    for (s32 y = 0; y < h; y++) {
+        const u8 *row = d + off + stride * (u32)(flip ? h - 1 - y : y);
+        u32 *o = bm->px + (u32)y * w;
+        for (s32 x = 0; x < w; x++) {
+            if (bpp == 24) o[x] = 0xFF000000u | (row[x * 3 + 2] << 16) | (row[x * 3 + 1] << 8) | row[x * 3];
+            else if (bpp == 32) o[x] = 0xFF000000u | (row[x * 4 + 2] << 16) | (row[x * 4 + 1] << 8) | row[x * 4];
+            else { const u8 *q = pal + row[x] * 4; o[x] = 0xFF000000u | (q[2] << 16) | (q[1] << 8) | q[0]; }
+        }
+    }
+    return bm;
+}
+
+bitmap *image_decode_file(const u8 *d, u32 n) {
+    if (n >= 2 && d[0] == 'B' && d[1] == 'M') return bmp_decode(d, n);
+    if (n < 4) return NULL;
+    return image_decode_tag(21, d, n);
+}
+
+u8 *bmp_encode(const bitmap *b, u32 *len) {
+    u32 stride = ((u32)b->w * 3 + 3) & ~3u, size = 54 + stride * b->h;
+    u8 *o = amalloc(size);
+    if (!o) return NULL;
+    memset(o, 0, 54);
+    o[0] = 'B'; o[1] = 'M';
+    u32 f[] = {size, 0, 54, 40, (u32)b->w, (u32)b->h};
+    for (int i = 0; i < 6; i++) { u32 v = f[i]; u8 *q = o + 2 + i * 4; q[0] = (u8)v; q[1] = (u8)(v >> 8); q[2] = (u8)(v >> 16); q[3] = (u8)(v >> 24); }
+    o[26] = 1; o[28] = 24;
+    u32 isz = stride * b->h;
+    o[34] = (u8)isz; o[35] = (u8)(isz >> 8); o[36] = (u8)(isz >> 16); o[37] = (u8)(isz >> 24);
+    o[38] = 0x13; o[39] = 0x0B; o[42] = 0x13; o[43] = 0x0B; /* 72 dpi */
+    for (int y = 0; y < b->h; y++) {
+        u8 *row = o + 54 + stride * (u32)(b->h - 1 - y);
+        const u32 *s = b->px + (u32)y * b->w;
+        for (int x = 0; x < b->w; x++) {
+            u32 c = s[x], a = c >> 24;
+            /* flatten transparency onto white */
+            u32 r = ((c >> 16 & 255) * a + 255 * (255 - a)) / 255, g = ((c >> 8 & 255) * a + 255 * (255 - a)) / 255, bl = ((c & 255) * a + 255 * (255 - a)) / 255;
+            row[x * 3] = (u8)bl; row[x * 3 + 1] = (u8)g; row[x * 3 + 2] = (u8)r;
+        }
+    }
+    *len = size;
+    return o;
+}
