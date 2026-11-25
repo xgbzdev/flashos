@@ -132,6 +132,13 @@ int plat_kevent(int *code, int *down, int *ascii) {
 int plat_kdown(int code) { return code >= 0 && code < 256 && kstate[code]; }
 void plat_mouse(int *x, int *y, int *b) { *x = mx; *y = my; *b = mb; }
 void plat_mouse_set(int x, int y) { (void)x; (void)y; }
+const char *plat_print(const u8 *d, u32 n) {         /* the simulator prints to a file */
+    FILE *f = fopen("sim_print.txt", "wb");
+    if (!f) return "cannot write sim_print.txt";
+    fwrite(d, 1, n, f);
+    fclose(f);
+    return "ok";
+}
 static int sim_wheel;
 int sim_wheel_add(int n) { sim_wheel += n; return sim_wheel; }
 int plat_wheel(void) { int w = sim_wheel; sim_wheel = 0; return w; }

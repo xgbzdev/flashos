@@ -304,6 +304,34 @@ int plat_kdown(int code) {
 }
 void plat_mouse(int *x, int *y, int *b) { plat_poll(); *x = mx; *y = my; *b = mbtn; }
 void plat_mouse_set(int x, int y) { mx = x; my = y; }
+/* print text on the parallel port (LPT1): "ok" or why not.
+ * In QEMU: -parallel file:print.txt; in VirtualBox the port needs a host
+ * device. Line ends become CR LF; a form feed ends the page. */
+static int lpt_byte(u16 base, u8 c) {
+    u32 t0 = plat_ms();
+    while (!(inb(base + 1) & 0x80))                   /* bit 7 = 0: busy */
+        if (plat_ms() - t0 > 2000) return 0;
+    outb(base, c);
+    u8 ctl = inb(base + 2);
+    outb(base + 2, ctl | 1);                          /* strobe */
+    for (volatile int k = 0; k < 200; k++) {}
+    outb(base + 2, ctl & ~1);
+    return 1;
+}
+const char *plat_print(const u8 *d, u32 n) {
+    u16 base = *(volatile u16 *)0x408;              /* the BIOS's LPT1 port */
+    if (!base) return "no printer port (LPT1) on this computer";
+    outb(base + 2, 0x08);                           /* init the printer */
+    for (volatile int i = 0; i < 20000; i++) {}
+    outb(base + 2, 0x0C);
+    for (u32 i = 0; i < n; i++) {
+        if (d[i] == '\n' && (i == 0 || d[i - 1] != '\r') && !lpt_byte(base, '\r'))
+            return i == 0 ? "the printer does not answer" : "the printer stopped";
+        if (!lpt_byte(base, d[i])) return i == 0 ? "the printer does not answer" : "the printer stopped";
+    }
+    if (!lpt_byte(base, 12)) return "the printer stopped";
+    return "ok";
+}
 int plat_wheel(void) { plat_poll(); int w = mwheel; mwheel = 0; return w; }
 void plat_flush_input(void) {
     plat_poll();

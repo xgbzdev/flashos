@@ -623,13 +623,18 @@ function termCommand(line) {
     var sp = line.indexOf(" ");
     var cmd = (sp < 0 ? line : line.substr(0, sp)).toLowerCase(), arg = sp < 0 ? "" : line.substr(sp + 1);
     if (cmd == "") return;
-    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, PAINT, SETTINGS, BALL   open an app\n  THEME <default|orange|green|blue|byrott>   window theme\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
+    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, PAINT, SETTINGS, BALL   open an app\n  PRINT <file or text>   print on the printer (LPT1)\n  THEME <default|orange|green|blue|byrott>   window theme\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
     else if (cmd == "files") openFiles();
     else if (cmd == "internet" || cmd == "web") openWeb();
     else if (cmd == "notepad") openNotepad(null);
     else if (cmd == "settings") openSettings("");
     else if (cmd == "ball") launch("ball");
     else if (cmd == "paint") openPaint(null);
+    else if (cmd == "print") {                 // PRINT <file>, or PRINT <some text>
+        var pf = findFile(arg), txt = pf ? FlashOS.read(pf.name) : arg;
+        if (txt == null || txt == "") tprint("  Usage: PRINT <text file> or PRINT <some text>");
+        else { var pr = FlashOS.print(txt); tprint(pr == "ok" ? "  Printed." : "  Not printed: " + pr + "."); }
+    }
     else if (cmd == "theme" || cmd == "color" || cmd == "colour") {
         var cn = arg.toLowerCase();
         if (!THEMES[cn]) tprint("  Themes: default, orange, green, blue, byrott");
@@ -674,9 +679,13 @@ function openNotepad(file) {
     if (!w) {
         w = makeWindow("notepad", "Notepad", 940, 620, false, function () { noteTF = null; });
         var b = w.body;
-        button(b, "new", 1, 0, 8, 90, 34, "New", function () { noteTF.text = ""; noteName = ""; noteDirty = false; noteTitle(); }, 0, 15);
-        button(b, "save", 2, 96, 8, 90, 34, "Save", function () { noteSave(false); }, 1, 15);
-        button(b, "saveas", 3, 192, 8, 110, 34, "Save as...", function () { noteSave(true); }, 0, 15);
+        button(b, "new", 1, 0, 8, 80, 34, "New", function () { noteTF.text = ""; noteName = ""; noteDirty = false; noteTitle(); }, 0, 15);
+        button(b, "open", 5, 86, 8, 90, 34, "Open...", function () {
+            pickFile("Open a text file", function (f) { return fileKind(f.name) == "txt"; }, function (n) { openNotepad(n); });
+        }, 0, 15);
+        button(b, "save", 2, 182, 8, 80, 34, "Save", function () { noteSave(false); }, 1, 15);
+        button(b, "saveas", 3, 268, 8, 110, 34, "Save as...", function () { noteSave(true); }, 0, 15);
+        button(b, "print", 6, 384, 8, 80, 34, "Print", function () { notePrint(); }, 0, 15);
         b.createTextField("txt", 4, 0, 52, 940, 568);
         noteTF = b.txt;
         noteTF.embedFonts = true;
@@ -701,6 +710,74 @@ function openNotepad(file) {
     }
     noteTitle();
     Selection.setFocus(noteTF);
+}
+function notePrint() {
+    if (noteTF.text == "") { message("Print", "There is nothing to print."); return; }
+    ask("Print", "Print " + (noteName == "" ? "this text" : noteName) + " on the printer (LPT1)?", ["Print", "Cancel"], function (k) {
+        if (k != 0) return;
+        var r = FlashOS.print ? FlashOS.print(noteTF.text.split("\r").join("\n")) : "this FlashOS cannot print";
+        if (r == "ok") message("Print", "Printed!");
+        else message("Print", "Sorry, it could not be printed: " + r + ".");
+    });
+}
+// a list of files to choose from (Open...): done(name)
+function pickFile(title, want, done) {
+    closeMenu();
+    var all = FlashOS.files(""), list = [];
+    for (var i = 0; i < all.length; i++) if (!hiddenFile(all[i]) && want(all[i])) list.push(all[i]);
+    var d = dialogLayer.createEmptyMovieClip("dim", 1);
+    box(d, 0, 0, W, H, 0x000000, 0, 0, 0);
+    d._alpha = 50;
+    d.onPress = function () {};
+    d.useHandCursor = false;
+    var p = dialogLayer.createEmptyMovieClip("panel", 2);
+    var pw = 640, ph = 500, first = 0, sel = -1, ROWS = 9;
+    p._x = (W - pw) / 2; p._y = (H - ph) / 2;
+    var g = p.createEmptyMovieClip("g", 1);
+    titleBar(g, 0, 0, pw, 28);
+    box(g, 0, 30, pw, ph - 30, WHITE, INK, 2, 0);
+    box(g, 20, 44, pw - 40, ROWS * 40 + 4, WHITE, INK, 2, 0);
+    label(p, "t", 2, 8, 5, pw - 20, 22, title, 16, onC1(), false);
+    var info = label(p, "info", 3, 20, ph - 58, 240, 22, list.length + (list.length == 1 ? " file" : " files"), 16, GREY, false);
+    function draw() {
+        for (var r = 0; r < ROWS; r++) {
+            var row = p["r" + r];
+            if (!row) {
+                row = p.createEmptyMovieClip("r" + r, 10 + r);
+                row._x = 22; row._y = 46 + r * 40;
+                row.bg = row.createEmptyMovieClip("bg", 1);
+                row.n = label(row, "n", 3, 44, 10, 380, 22, "", 16, INK, false);
+                row.wh = label(row, "wh", 4, 430, 10, 160, 22, "", 16, GREY, false, "right");
+                row.r = r;
+                row.last = 0;
+                row.onRelease = function () {
+                    var k = first + this.r;
+                    if (k >= list.length) return;
+                    if (k == sel && getTimer() - this.last < 500) { closeDialog(); done(list[k].name); return; }
+                    sel = k; this.last = getTimer(); draw();
+                };
+            }
+            row.bg.clear();
+            var k = first + r;
+            if (k < list.length) {
+                box(row.bg, 0, 0, pw - 44, 40, k == sel ? C3 : WHITE, 0, 0, 0);
+                icon(row, "ic", 2, 6, 4, fileKind(list[k].name), true);
+                row.n.text = list[k].name;
+                row.wh.text = WHERE[list[k].where] ? WHERE[list[k].where] : list[k].where;
+                row._visible = true;
+            } else row._visible = false;
+        }
+    }
+    draw();
+    if (list.length == 0) label(p, "none", 40, 40, 200, pw - 80, 22, "No files of this kind.", 16, GREY, false, "center");
+    button(p, "up", 30, pw - 300, ph - 62, 40, 40, "^", function () { if (first > 0) { first -= ROWS; if (first < 0) first = 0; draw(); } }, 0, 16);
+    button(p, "dn", 31, pw - 256, ph - 62, 40, 40, "v", function () { if (first + ROWS < list.length) { first += ROWS; draw(); } }, 0, 16);
+    button(p, "ok", 32, pw - 208, ph - 62, 90, 40, "Open", function () { if (sel >= 0) { closeDialog(); done(list[sel].name); } }, 1, 16);
+    button(p, "no", 33, pw - 112, ph - 62, 90, 40, "Cancel", function () { closeDialog(); }, 0, 16);
+    dialogKeys = function (code) {
+        if (code == 27) closeDialog();
+        if (code == 13 && sel >= 0) { closeDialog(); done(list[sel].name); }
+    };
 }
 function noteTitle() {
     var w = wins["notepad"];
@@ -752,7 +829,7 @@ function openPaint(file) {
     // top: file buttons
     button(b, "new", 1, 140, 0, 70, 34, "New", function () { paintSnap(); paintBmp.fillRect(paintFull, 0xFFFFFF); paintName = ""; paintDirty = false; paintTitle(); }, 0, 16);
     button(b, "open", 2, 214, 0, 80, 34, "Open...", function () {
-        prompt("Open a picture", "File name (a picture on the disk, CD or USB):", paintName == "" ? "" : paintName, function (n) { paintLoad(n); });
+        pickFile("Open a picture", function (f) { return fileKind(f.name) == "img" || ext(f.name) == "bmp"; }, function (n) { paintLoad(n); });
     }, 0, 16);
     button(b, "save", 3, 298, 0, 70, 34, "Save", function () { paintSave(false, null); }, 1, 16);
     button(b, "saveas", 4, 372, 0, 100, 34, "Save as...", function () { paintSave(true, null); }, 0, 16);

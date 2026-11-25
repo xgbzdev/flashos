@@ -31,8 +31,9 @@ elif mode == "audio":    # boot CD + test CD, AC'97 recorded to a WAV file
              "-boot", "d", "-audiodev", f"wav,id=snd0,path={extra[1]}", "-device", "AC97,audiodev=snd0"]
 elif mode in ("byr_setup", "byr_cd"):   # ByroTT CD + a disk
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-drive", f"file={iso},media=cdrom,if=ide,index=2", "-boot", "d"]
-elif mode == "byr_boot":   # the hard disk only
-    media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-boot", "c"]
+elif mode == "byr_boot":   # the hard disk only, and a printer (to a file)
+    media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-boot", "c",
+             "-parallel", "file:" + os.path.abspath(os.path.join(outdir, "byr_print.txt"))]
 elif mode == "maze":     # boot CD + the Maze CD
     media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3", "-boot", "d"]
 elif mode == "gamecd":   # boot CD + a second, data-only ISO with games
@@ -227,11 +228,18 @@ if mode == "byr_boot":
     type_text("ls\n")
     time.sleep(1.5)
     shot("07_ls_no_setup")
+    type_text("print hello from byrott\n")
+    time.sleep(2)
+    shot("08_print")
     type_text("paint\n")
     time.sleep(2)
-    shot("08_paint")
+    shot("09_paint")
     cmd("quit")
     qemu.wait(timeout=10)
+    printed = open(os.path.join(outdir, "byr_print.txt"), "rb").read()
+    print("printed:", printed)
+    if b"hello from byrott" not in printed:
+        sys.exit("the printer got nothing")
     sys.exit(0)
 
 if mode == "byr_cd":    # ByroTT on the disk and the ByroTT CD still inside

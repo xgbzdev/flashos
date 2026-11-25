@@ -3255,6 +3255,12 @@ static val nf_bImgReset(ctx *c, val th, val *a, int n) {
     img_used = 0;
     return vundef();
 }
+/* print(text): on the printer (LPT1); "ok" or why not */
+static val nf_bPrint(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    const char *t = as_tostring(ARG(0));
+    return vstr(astrdup(plat_print((const u8 *)t, kstrlen(t))));
+}
 /* copy any file (CD, USB, ...) to the hard disk, byte for byte */
 static val nf_bCopy(ctx *c, val th, val *a, int n) {
     (void)c; (void)th;
@@ -3298,6 +3304,7 @@ static void byrott_api(obj *f) {
     def_native(f, "copyFile", nf_bCopy);
     def_native(f, "cursorColor", nf_bCursor);
     def_native(f, "httpImage", nf_bHttpImage);
+    def_native(f, "print", nf_bPrint);
     def_native(f, "webImagesReset", nf_bImgReset);
     def_native(f, "volume", nf_bVol);
     def_native(f, "setVolume", nf_bSetVol);

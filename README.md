@@ -226,7 +226,7 @@ of window. The icons are the mock-up's own drawings.
   pictures (http only, up to 12 per page), with +Mark, Bookmarks and History
   (saved on the disk). Without a network it asks you to connect your PC to a
   FlashRouter.
-* **Notepad**, **Paint** (pencil, brush, eraser, line, box, fill, 16
+* **Notepad** (New, Open..., Save, Save as..., Print), **Paint** (pencil, brush, eraser, line, box, fill, 16
   colours, undo; saves .bmp pictures and can make one your wallpaper), a
   picture and video viewer (with Edit in Paint), and **Ball Game v2.0**:
   dodge the balls, the level goes up every 15 seconds, catch the S (shield),
@@ -236,6 +236,9 @@ of window. The icons are the mock-up's own drawings.
 * **Admin password**: set it in Settings. File Manager > Admin then asks for
   it before showing the Private Folder. Hard Disk > Make private moves a
   file there (and Make public moves it back).
+* **Printing** goes to the printer port LPT1 (Notepad's Print, or PRINT in
+  the Command Runner). In QEMU: `-parallel file:print.txt`. The mouse wheel
+  scrolls web pages and the Command Runner.
 * **Settings**: click a row to change the pointer colour (white, black, red,
   green), the windows theme (Default, Orange, Green, Blue, Byrott) or the
   wallpaper.
