@@ -177,7 +177,9 @@ static u8 kstate[256];
 
 #define QN 64
 static int cq[QN], cq_h, cq_t;                   /* shell chars */
-static struct { u8 code, down, ascii; } eq[QN];  /* Flash key events */
+static struct { u8 code, down, ascii, mods; } eq[QN];  /* Flash key events */
+/* Shift/Ctrl/Alt as they were when the key event being handled happened */
+static int ev_mods, ev_active;
 static int eq_h, eq_t;
 
 static int mx = 320, my = 240, mbtn, mpkt[3], mpn;
@@ -190,6 +192,7 @@ static void push_ev(int code, int down, int ascii) {
         eq[eq_t % QN].code = (u8)code;
         eq[eq_t % QN].down = (u8)down;
         eq[eq_t % QN].ascii = (u8)ascii;
+        eq[eq_t % QN].mods = (u8)(kstate[16] | (kstate[17] << 1) | (kstate[18] << 2));
         eq_t++;
     }
 }
@@ -275,20 +278,27 @@ int plat_key(void) {
 }
 int plat_kevent(int *code, int *down, int *ascii) {
     plat_poll();
-    if (eq_h == eq_t) return 0;
+    if (eq_h == eq_t) { ev_active = 0; return 0; }
     *code = eq[eq_h % QN].code;
     *down = eq[eq_h % QN].down;
     *ascii = eq[eq_h % QN].ascii;
+    ev_mods = eq[eq_h % QN].mods;
+    ev_active = 1;
     eq_h++;
     return 1;
 }
-int plat_kdown(int code) { return code >= 0 && code < 256 && kstate[code]; }
+int plat_kdown(int code) {
+    if (code < 0 || code >= 256) return 0;
+    if (ev_active && code >= 16 && code <= 18 && (ev_mods >> (code - 16) & 1)) return 1;
+    return kstate[code];
+}
 void plat_mouse(int *x, int *y, int *b) { plat_poll(); *x = mx; *y = my; *b = mbtn; }
 void plat_mouse_set(int x, int y) { mx = x; my = y; }
 void plat_flush_input(void) {
     plat_poll();
     cq_h = cq_t;
     eq_h = eq_t;
+    ev_active = 0;
     memset(kstate, 0, sizeof kstate);
 }
 
