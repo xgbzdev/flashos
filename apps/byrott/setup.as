@@ -46,7 +46,7 @@ function newPage() {
     page = _root.createEmptyMovieClip("page", 10);
     next = null; back = null; tiles = [];
     footR = label(page, "fr", 90, PX + 40, PY + PH - 56, PW - 70, 30, "", 16, INK, "right");
-    footL = label(page, "fl", 91, PX + 30, PY + PH - 56, 380, 30, "", 12, 0x30474A, "left");
+    footL = label(page, "fl", 91, PX + 30, PY + PH - 52, 300, 30, "", 10, 0x30474A, "left");
     return page;
 }
 function heading(p, text) { return label(p, "h", 1, PX + 50, PY + 50, PW - 100, 150, text, 18, INK); }
