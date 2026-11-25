@@ -21,6 +21,41 @@ static int n_init_done;
 /* ---------------------------------------------------------------- memory */
 static u8 *a_base, *a_top, *a_end;
 u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
+#ifdef BYROTT
+/* ByroTT edition: play a movie inside a big black window with a title bar and an X */
+int swf_window;
+const char *swf_window_title;
+#define WIN_X 24
+#define WIN_Y 20
+#define WIN_W 976
+#define WIN_H 728
+#define WIN_BAR 40
+static void win_text(int x, int y, const char *s, u32 col) {
+    const u8 *font = plat_font();
+    for (; *s; s++, x += 16) {
+        const u8 *g = font + (u8)*s * 16;
+        for (int r = 0; r < 16; r++)
+            for (int b = 0; b < 8; b++)
+                if (g[r] & (0x80 >> b)) video_fill(x + b * 2, y + r * 2, 2, 2, col);
+    }
+}
+extern u32 byr_win_color;
+static void win_chrome(void) {
+    video_fill(0, 0, scr_w, scr_h, 0xFF10202Au);
+    video_fill(WIN_X - 2, WIN_Y - 2, WIN_W + 4, WIN_H + 4, byr_win_color);
+    video_fill(WIN_X, WIN_Y, WIN_W, WIN_BAR, byr_win_color);
+    video_fill(WIN_X, WIN_Y + WIN_BAR, WIN_W, WIN_H - WIN_BAR, 0xFF000000u);
+    char t[48];
+    kstrcpy(t, swf_window_title ? swf_window_title : "", 44);
+    win_text(WIN_X + 14, WIN_Y + 4, t, 0xFFFFFFFFu);
+    int bx = WIN_X + WIN_W - 44, by = WIN_Y + 6;
+    video_fill(bx, by, 36, WIN_BAR - 12, 0xFFE53935u);
+    for (int i = 0; i < 16; i++) {
+        video_fill(bx + 10 + i, by + 6 + i * (WIN_BAR - 24) / 16, 3, 3, 0xFFFFFFFFu);
+        video_fill(bx + 25 - i, by + 6 + i * (WIN_BAR - 24) / 16, 3, 3, 0xFFFFFFFFu);
+    }
+}
+#endif
 #ifdef HOSTED
 #include <time.h>
 #include <stdio.h>
@@ -1223,6 +1258,12 @@ static void handle_input(void) {
         hot = t;
     }
     int is_down = mb & 1;
+#ifdef BYROTT
+    if (swf_window && is_down && !mouse_down && mx >= WIN_X + WIN_W - 44 && mx < WIN_X + WIN_W - 8 && my >= WIN_Y + 6 && my < WIN_Y + WIN_BAR - 6) {
+        quit_requested = 1;
+        return;
+    }
+#endif
     if (is_down && !mouse_down) {
         mouse_down = 1;
         text_set_focus(text_hit(root, MAT_ID, tx, ty));
@@ -1337,9 +1378,13 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         if (sh < 1) sh = 400;
         stage_w = (int)sw;
         stage_h = (int)sh;
-        float s = scr_w / sw < scr_h / sh ? scr_w / sw : scr_h / sh;
+        int ax = 0, ay = 0, aw = scr_w, ah = scr_h;
+#ifdef BYROTT
+        if (swf_window) { ax = WIN_X + 4; ay = WIN_Y + WIN_BAR; aw = WIN_W - 8; ah = WIN_H - WIN_BAR - 4; }
+#endif
+        float s = aw / sw < ah / sh ? aw / sw : ah / sh;
         int vw = (int)(sw * s), vh = (int)(sh * s);
-        int vx = (scr_w - vw) / 2, vy = (scr_h - vh) / 2;
+        int vx = ax + (aw - vw) / 2, vy = ay + (ah - vh) / 2;
         mat b = {s / 20.0f, 0, 0, s / 20.0f, vx - st[0] * s / 20.0f, vy - st[2] * s / 20.0f};
         base = b;
 
@@ -1365,6 +1410,9 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         plat_flush_input();
         plat_mouse_set(scr_w / 2, scr_h / 2);
         video_fill(0, 0, scr_w, scr_h, 0xFF000000u);
+#ifdef BYROTT
+        if (swf_window) win_chrome();
+#endif
         video_present(0, 0, scr_w, scr_h);
         int first = 1, skipped = 0;
         /* Fixed schedule from the SWF's own frame rate (like the Flash
@@ -1414,6 +1462,9 @@ int swf_play(const u8 *data, u32 size, const char **err) {
             audio_pump();
             if (osd_shown) draw_volume_osd_keep();
             int show = interactive && mouse_visible;
+#ifdef BYROTT
+            if (swf_window) show = 1; /* the X needs a mouse pointer */
+#endif
             if (show) draw_cursor(sx_mouse, sy_mouse, hot && hot->hand);
             while ((s32)(plat_ms() - due) < 0 && !quit_requested) {
                 int mx, my, mb;

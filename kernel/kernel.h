@@ -124,6 +124,7 @@ int net_init(void);                  /* 1 ok, -1 no card, -2 no cable, -3 no DHC
 const char *net_status(char *buf);
 int net_ping(const char *host, u32 *ms, char *err);
 int net_get(const char *url, u8 **data, u32 *len, int *status, char *err);
+int net_get_buf(const char *url, u8 *buf, u32 cap, u8 **data, u32 *len, int *status, char *err);
 extern u32 net_reserved;             /* bytes at the top of RAM used by downloads */
 int fs_add_download(const char *name, const u8 *data, u32 len);
 int fs_add_file(const char *name, const u8 *data, u32 len, int tag); /* tag 2 NET, 3 CD */

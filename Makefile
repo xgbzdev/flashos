@@ -77,6 +77,46 @@ build/flashfs.bin: tools/mkfs.py swf/bounce.swf swf/flashlogo.swf $(FILES) | bui
 build/FlashOS.iso: build/mbr.bin build/loader.bin build/stage2.bin build/flashkrn.bin build/flashfs.bin tools/mkiso.py
 	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin build/flashkrn.bin build/flashfs.bin build/stage2.bin $@
 
+# ---- ByroTT: a Flash desktop that a modified FlashOS starts by itself ----
+# build/ByroTT.iso boots the ByroTT edition of FlashOS (normal terminal; type
+# Byr.swf to install). Once installed it starts ByroTT directly.
+BYRDIR  := build/byr
+BYROBJ  := $(patsubst kernel/%.c,$(BYRDIR)/%.o,$(KSRC) kernel/plat_pc.c)
+BYRFONTS := --font apps/byrott/Fredoka-Regular.ttf "Fredoka" --font apps/byrott/Fredoka-SemiBold.ttf "Fredoka SemiBold" \
+            --font apps/byrott/DejaVuSansMono.ttf "DejaVu Sans Mono"
+# private/wallpapers: pictures that stay out of the public repository
+BYRWALL := $(sort $(wildcard apps/byrott/wallpapers/*.jpg) $(wildcard private/wallpapers/*.jpg))
+
+$(BYRDIR)/%.o: kernel/%.c kernel/kernel.h kernel/swf.h kernel/audio.h | build
+	mkdir -p $(BYRDIR)
+	$(CC) $(CFLAGS) -DBYROTT -c $< -o $@
+$(BYRDIR)/audio.o: kernel/audio.c kernel/audio.h kernel/minimp3.h | build
+	mkdir -p $(BYRDIR)
+	$(CC) $(CFLAGS) -DBYROTT -Wno-sign-compare -Wno-unused-parameter -Ikernel/libc -c $< -o $@
+$(BYRDIR)/flashkrn.elf: build/entry.o $(BYROBJ) kernel/linker.ld
+	ld $(LDFLAGS) -o $@ build/entry.o $(BYROBJ)
+	@if nm $@ | grep -q ' U '; then nm $@ | grep ' U '; echo "undefined symbols"; exit 1; fi
+$(BYRDIR)/flashkrn.bin: $(BYRDIR)/flashkrn.elf
+	objcopy -O binary $< $@
+$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/Fredoka-Regular.ttf | build
+	mkdir -p $(BYRDIR)
+	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT Setup" --fps 30
+$(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/Fredoka-Regular.ttf | build
+	mkdir -p $(BYRDIR)
+	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT" --fps 30
+$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Maze.swf $(BYRWALL)
+	cp build/FlashOS.iso $(BYRDIR)/flashos.iso
+	cp build/apps/Maze.swf $(BYRDIR)/maze.swf
+	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/maze.swf $(BYRWALL)
+build/ByroTT.iso: build/mbr.bin build/loader.bin build/stage2.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin tools/mkiso.py
+	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin build/stage2.bin $@ \
+		--label BYROTT --file BYR.SWF=$(BYRDIR)/byr.swf
+byrott: build/ByroTT.iso
+$(BYRDIR)/sim: host/sim.c $(KSRC) kernel/kernel.h kernel/swf.h | build
+	mkdir -p $(BYRDIR)
+	cc -DHOSTED -DBYROTT -O2 -g -Ikernel -o $@ host/sim.c $(KSRC) -lm
+.PHONY: byrott
+
 run: build/FlashOS.iso
 	qemu-system-i386 -m 256 -vga std -cdrom $< -boot d
 

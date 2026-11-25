@@ -120,6 +120,10 @@ static void cmd_ls(void) {
     }
 }
 
+#ifdef BYROTT
+static void byr_after_play(void);
+static void byrott_loop(void);
+#endif
 static void cmd_run(const char *arg) {
     kfile f;
     if (!*arg) { con_puts("\n Usage: RUN <file.swf>\n"); return; }
@@ -136,6 +140,9 @@ static void cmd_run(const char *arg) {
     plat_sleep(250);
     const char *err = NULL;
     swf_play(f.data, f.size, &err);
+#ifdef BYROTT
+    byr_after_play(); /* the setup may ask for a restart */
+#endif
     redraw_header();
     if (err) { con_puts("\n\n\n SWF error: "); con_puts(err); }
 }
@@ -203,17 +210,40 @@ static void read_line(char *buf, int max);
 #define S2_COPY ((const u8 *)0x01D00000)
 static u32 le32(const u8 *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
 
-static int write_part(ata_disk *d, u32 lba, const u8 *src, u32 count, u32 *done, u32 total) {
+typedef void (*progress_fn)(u32 pct);
+static void con_progress(u32 pct) {
+    con_puts("\r Installing... ");
+    put_num(pct);
+    con_puts("%   ");
+}
+static int write_part(ata_disk *d, u32 lba, const u8 *src, u32 count, u32 *done, u32 total, progress_fn pr) {
     for (u32 i = 0; i < count; i += 16) {
         u32 n = count - i < 16 ? count - i : 16;
         if (!ata_write(d, lba + i, src + i * 512, n)) return 0;
         *done += n;
-        u32 pct = *done * 100 / total;
-        con_puts("\r Installing... ");
-        put_num(pct);
-        con_puts("%   ");
+        pr(*done * 100 / total);
     }
     return 1;
+}
+
+/* the system this kernel booted from, copied onto disk d */
+static int sys_install(ata_disk *d, progress_fn pr) {
+    const u8 *hd = SYS_COPY + 512;
+    u32 k_lba = le32(hd + 10), k_cnt = le32(hd + 14), fs_lba = le32(hd + 18), fs_cnt = le32(hd + 22);
+    u32 s2_lba = le32(hd + 30), s2_cnt = le32(hd + 34);
+    /* mark the hard-disk loader as "installed" (hides INSTALL there) */
+    u8 *sys = kmalloc(64 * 512);
+    if (!sys) return 0;
+    memcpy(sys, SYS_COPY, 64 * 512);
+    sys[512 + 38] |= 1;
+    u32 done = 0, total = 64 + k_cnt + s2_cnt + fs_cnt;
+    int ok = write_part(d, 0, sys, 64, &done, total, pr) &&
+             write_part(d, k_lba, KRN_COPY, k_cnt, &done, total, pr) &&
+             write_part(d, s2_lba, S2_COPY, s2_cnt, &done, total, pr) &&
+             write_part(d, fs_lba, plat_fs(), fs_cnt, &done, total, pr);
+    static u8 check[512];
+    if (ok) ok = ata_read(d, 0, check, 1) && !memcmp(check, sys, 512);
+    return ok;
 }
 
 static void cmd_install(void) {
@@ -234,9 +264,7 @@ static void cmd_install(void) {
         con_puts("\n Installer data missing - boot FlashOS from the ISO to install.\n");
         return;
     }
-    u32 k_lba = le32(hd + 10), k_cnt = le32(hd + 14), fs_lba = le32(hd + 18), fs_cnt = le32(hd + 22);
-    u32 s2_lba = le32(hd + 30), s2_cnt = le32(hd + 34);
-    u32 need = fs_lba + fs_cnt;
+    u32 need = le32(hd + 18) + le32(hd + 22); /* end of the built-in files */
 
     con_puts("\n Hard disks:\n");
     for (int i = 0; i < n; i++) {
@@ -263,19 +291,7 @@ static void cmd_install(void) {
     read_line(ans, sizeof ans);
     if (kstricmp(ans, "yes")) { con_puts("\n Cancelled.\n"); return; }
     con_putc('\n');
-    /* mark the hard-disk loader as "installed" (hides INSTALL there) */
-    u8 *sys = kmalloc(64 * 512);
-    if (!sys) { con_puts("\n Not enough memory.\n"); return; }
-    memcpy(sys, SYS_COPY, 64 * 512);
-    sys[512 + 38] |= 1;
-    u32 done = 0, total = 64 + k_cnt + s2_cnt + fs_cnt;
-    int ok = write_part(d, 0, sys, 64, &done, total) &&
-             write_part(d, k_lba, KRN_COPY, k_cnt, &done, total) &&
-             write_part(d, s2_lba, S2_COPY, s2_cnt, &done, total) &&
-             write_part(d, fs_lba, plat_fs(), fs_cnt, &done, total);
-    static u8 check[512];
-    if (ok) ok = ata_read(d, 0, check, 1) && !memcmp(check, sys, 512);
-    if (!ok) { con_puts("\n Disk write failed. FlashOS was not installed.\n"); return; }
+    if (!sys_install(d, con_progress)) { con_puts("\n Disk write failed. FlashOS was not installed.\n"); return; }
     con_puts("\n FlashOS is installed on the hard disk.\n"
              " Remove the CD / USB stick (VirtualBox: Settings > Storage, remove the\n"
              " ISO), then type REBOOT.\n");
@@ -455,6 +471,9 @@ static void handle(char *line) {
     else if (!kstricmp(line, "vol") || !kstricmp(line, "volume")) cmd_vol(arg);
     else if (!kstricmp(line, "snddiag")) cmd_snddiag();
     else if (!kstricmp(line, "time") || !kstricmp(line, "clock")) cmd_time();
+#ifdef BYROTT
+    else if (!kstricmp(line, "byrott") && installed()) { byrott_loop(); redraw_header(); }
+#endif
     else if (!kstricmp(line, "rescan")) {
         con_puts("\n Reading CD drives...");
         int n = cd_scan();
@@ -533,6 +552,209 @@ static void read_line(char *buf, int max) {
     }
 }
 
+#ifdef BYROTT
+/* ================================================================ ByroTT edition
+ * This FlashOS starts ByroTT (a Flash desktop, byrott.swf) by itself once it
+ * is installed. It shows the logo quickly; holding F8 goes to the terminal.
+ * ByroTT's setup (byr.swf) and ByroTT may install this system, put the
+ * original FlashOS back (flashos.iso, kept in the built-in files), restart
+ * and play another SWF in a window. */
+extern int quit_requested;
+extern int swf_window;            /* player.c: play inside a window */
+extern const char *swf_window_title;
+static char launch_arg[256];
+static char run_req[64];
+u32 byr_win_color = 0xFF1EC8DCu;   /* the window colour picked in ByroTT */
+static int power_req;             /* 1 restart, 2 shut down, 3 FlashOS terminal */
+
+const char *byr_launch_arg(void) { return launch_arg; }
+int byr_installed(void) { return installed(); }
+void byr_run(const char *name, const char *back, u32 color) {
+    if (color) byr_win_color = 0xFF000000u | color;
+    kstrcpy(run_req, name, sizeof run_req);
+    kstrcpy(launch_arg, back, sizeof launch_arg);
+    quit_requested = 1;
+}
+void byr_power(int what) { power_req = what; quit_requested = 1; }
+
+static void byr_after_play(void) {
+    if (power_req == 1) plat_reboot();
+    if (power_req == 2) plat_poweroff();
+}
+
+/* ---- a box drawn by the system itself: a SWF cannot draw or answer it ---- */
+static void text_at(int x, int y, const char *s, u32 col, int sc) {
+    const u8 *font = plat_font();
+    for (; *s; s++, x += 8 * sc) {
+        const u8 *g = font + (u8)*s * 16;
+        for (int r = 0; r < 16; r++)
+            for (int b = 0; b < 8; b++)
+                if (g[r] & (0x80 >> b)) video_fill(x + b * sc, y + r * sc, sc, sc, col);
+    }
+}
+#define BX 152
+#define BY 244
+#define BW 720
+#define BH 280
+static void sys_box(const char *title, const char *l1, const char *l2, const char *l3) {
+    video_fill(BX - 6, BY - 6, BW + 12, BH + 12, 0xFF000000u);
+    video_fill(BX - 4, BY - 4, BW + 8, BH + 8, 0xFFFF2020u);
+    video_fill(BX, BY, BW, BH, 0xFF000000u);
+    text_at(BX + 24, BY + 20, "FlashOS", 0xFFFF2020u, 2);
+    text_at(BX + 24, BY + 64, title, 0xFFFFFFFFu, 1);
+    text_at(BX + 24, BY + 104, l1, 0xFFE0E0E0u, 1);
+    text_at(BX + 24, BY + 128, l2, 0xFFE0E0E0u, 1);
+    text_at(BX + 24, BY + 152, l3, 0xFFE0E0E0u, 1);
+    video_present(BX - 6, BY - 6, BW + 12, BH + 12);
+}
+static int sys_confirm(const char *title, const char *l1, const char *l2, const char *l3) {
+    sys_box(title, l1, l2, l3);
+    text_at(BX + 24, BY + 220, "Press Y to allow, N to cancel.", 0xFFFFD040u, 1);
+    video_present(BX, BY + 200, BW, 60);
+    plat_flush_input();
+    for (;;) {
+        int code, down, ascii;
+        while (plat_kevent(&code, &down, &ascii)) {
+            if (!down) continue;
+            if (code == 89) return 1;
+            if (code == 78 || code == 27) return 0;
+        }
+    }
+}
+static void box_progress(u32 pct) {
+    video_fill(BX + 24, BY + 214, BW - 48, 28, 0xFF401010u);
+    video_fill(BX + 24, BY + 214, (BW - 48) * (int)pct / 100, 28, 0xFFFF2020u);
+    video_present(BX + 24, BY + 214, BW - 48, 28);
+}
+
+/* the disk to use: the one FlashOS is on, else the first one */
+static ata_disk *pick_disk(u32 need) {
+    static ata_disk disks[4];
+    static u8 s0[512];
+    int n = ata_scan(disks, 4);
+    for (int i = 0; i < n; i++)
+        if (ata_read(&disks[i], 0, s0, 1) && !memcmp(s0, SYS_COPY, 440) && disks[i].sectors >= need) return &disks[i];
+    for (int i = 0; i < n; i++) if (disks[i].sectors >= need) return &disks[i];
+    return NULL;
+}
+
+/* "ok", "cancelled" or an error */
+const char *byr_install(void) {
+#ifdef HOSTED
+    return "no hard disk in the simulator";
+#else
+    const u8 *hd = SYS_COPY + 512;
+    if (SYS_COPY[510] != 0x55 || SYS_COPY[511] != 0xAA || (hd[8] | (hd[9] << 8)) != 512)
+        return "start the computer from the ByroTT CD to install";
+    ata_disk *d = pick_disk(le32(hd + 18) + le32(hd + 22));
+    if (!d) return "no IDE hard disk found";
+    if (!sys_confirm("ByroTT Setup wants to install ByroTT on the hard disk.",
+                     "The computer will start ByroTT instead of the FlashOS terminal.",
+                     "Your saved documents are kept.",
+                     "You can uninstall it later in ByroTT's Settings.")) return "cancelled";
+    sys_box("Installing ByroTT...", "Please wait.", "", "");
+    return sys_install(d, box_progress) ? "ok" : "disk write failed";
+#endif
+}
+
+const char *byr_uninstall(void) {
+#ifdef HOSTED
+    return "no hard disk in the simulator";
+#else
+    kfile f;
+    if (!fs_find("flashos.iso", &f) || f.size < 4096) return "the FlashOS image is missing";
+    const u8 *hd = f.data + 512;
+    if ((hd[8] | (hd[9] << 8)) != 512) return "the FlashOS image is damaged";
+    u32 need = le32(hd + 18) + le32(hd + 22);          /* sectors up to the end of its files */
+    if (need * 512 > f.size + 2047) return "the FlashOS image is damaged";
+    ata_disk *d = pick_disk(need);
+    if (!d) return "no IDE hard disk found";
+    if (!sys_confirm("ByroTT wants to uninstall itself.",
+                     "The original FlashOS will be put back on the hard disk.",
+                     "Your saved documents are kept.", "")) return "cancelled";
+    sys_box("Putting FlashOS back...", "Please wait.", "", "");
+    static u8 sec[512 * 16];
+    for (u32 i = 0; i < need; i += 16) {
+        u32 n = need - i < 16 ? need - i : 16;
+        memset(sec, 0, sizeof sec);
+        u32 from = i * 512, bytes = n * 512;
+        if (from + bytes > f.size) bytes = f.size > from ? f.size - from : 0;
+        memcpy(sec, f.data + from, bytes);
+        if (i == 0) sec[512 + 38] |= 1;                 /* installed: hides INSTALL */
+        if (!ata_write(d, i, sec, n)) return "disk write failed";
+        box_progress((i + n) * 100 / need);
+    }
+    return "ok";
+#endif
+}
+
+/* SWFs saved on the hard disk are read into one reusable buffer */
+static u8 *runbuf;
+static u32 runcap;
+static void *run_alloc(u32 n) {
+    if (n > runcap) { runbuf = kmalloc(n); runcap = runbuf ? n : 0; }
+    return runbuf;
+}
+
+static void play_windowed(const char *name) {
+    kfile f;
+    const u8 *data = NULL;
+    u32 size = 0;
+    if (fs_find(name, &f)) { data = f.data; size = f.size; }
+    else data = docs_read(name, &size, run_alloc);
+    if (!data || size < 8 || !((data[0] == 'F' || data[0] == 'C' || data[0] == 'Z') && data[1] == 'W' && data[2] == 'S')) {
+        kstrcpy(launch_arg + kstrlen(launch_arg), "|not a SWF file", 64);
+        return;
+    }
+    const char *err = NULL;
+    swf_window = 1;
+    swf_window_title = name;
+    swf_play(data, size, &err);
+    swf_window = 0;
+    if (err) {
+        u32 l = kstrlen(launch_arg);
+        kstrcpy(launch_arg + l, "|", 2);
+        kstrcpy(launch_arg + l + 1, err, sizeof launch_arg - l - 1);
+    }
+}
+
+/* ByroTT until it asks for the terminal; F12 in ByroTT starts it again */
+static void byrott_loop(void) {
+    launch_arg[0] = 0;
+    for (;;) {
+        kfile f;
+        if (!fs_find("byrott.swf", &f)) return;
+        run_req[0] = 0;
+        power_req = 0;
+        const char *err = NULL;
+        swf_play(f.data, f.size, &err);
+        byr_after_play();
+        if (power_req == 3) return;
+        if (run_req[0]) { play_windowed(run_req); continue; }
+        launch_arg[0] = 0;
+    }
+}
+
+/* the logo, quickly; returns 1 when F8 is held */
+static int fast_logo(void) {
+    con_defer(1);
+    con_clear();
+    header_text();
+    con_defer(0);
+    int bottom = con_row_y(5), f8 = 0;
+    for (int y = 0; y < bottom; y += 6) {
+        video_present(0, y, scr_w, 6);
+        plat_sleep(2);
+        plat_poll();
+        if (plat_kdown(119)) f8 = 1;
+    }
+    video_present(0, 0, scr_w, scr_h);
+    u32 t = plat_ms();
+    while (plat_ms() - t < 500) { plat_poll(); if (plat_kdown(119)) f8 = 1; }
+    return f8;
+}
+#endif
+
 void kmain(void) {
     u32 hsize;
     void *heap = plat_heap(&hsize);
@@ -542,7 +764,16 @@ void kmain(void) {
     render_init();
     cd_scan(); /* game CDs / ISO images in the CD drives */
     con_init();
+#ifdef BYROTT
+    if (installed()) {
+        if (!fast_logo()) byrott_loop();
+        redraw_header();
+    } else {
+        boot_animation();
+    }
+#else
     boot_animation();
+#endif
 
     char line[64];
     for (;;) {

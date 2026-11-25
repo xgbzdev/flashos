@@ -138,6 +138,7 @@ void plat_poweroff(void) { printf("poweroff\n"); }
 void plat_halt(void) { for (;;) advance(10); }
 
 int main(int argc, char **argv) {
+    if (getenv("SIM_INSTALLED")) bi.flags = 1; /* boot as if installed on a hard disk */
     fbmem = calloc(W * H, 4);
     FILE *f = fopen("font.bin", "rb");
     if (!f || fread(font, 1, 4096, f) != 4096) { fprintf(stderr, "font.bin missing\n"); return 1; }

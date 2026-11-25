@@ -51,8 +51,18 @@ def patch_loader(loader, sector_size, k_lba, k_cnt, fs_lba, fs_cnt, fs_bytes, s2
 
 
 def main():
-    mbr, loader, kernel, fs, stage2 = (open(p, "rb").read() for p in sys.argv[1:6])
-    out = sys.argv[6]
+    args = sys.argv[1:]
+    label = b"FLASHOS"
+    extra = []   # (ISO name, data): extra files visible on the CD
+    while "--label" in args:
+        i = args.index("--label"); label = args[i + 1].encode(); del args[i:i + 2]
+    while "--file" in args:
+        i = args.index("--file")
+        name, path = args[i + 1].split("=", 1)
+        extra.append((name.upper().encode() + b";1", open(path, "rb").read()))
+        del args[i:i + 2]
+    mbr, loader, kernel, fs, stage2 = (open(p, "rb").read() for p in args[0:5])
+    out = args[5]
     assert len(mbr) == 512 and len(loader) == 2048
 
     LBA_PVD, LBA_BOOT, LBA_TERM = 16, 17, 18
@@ -61,6 +71,10 @@ def main():
     lba_s2 = lba_kernel + sectors(len(kernel))
     lba_fs = lba_s2 + sectors(len(stage2))
     total = lba_fs + sectors(len(fs))
+    extra_lba = []
+    for name, data in extra:
+        extra_lba.append(total)
+        total += sectors(len(data))
 
     files = [  # ISO 9660 names, sorted
         (b"BOOT.CAT;1", LBA_CAT, SECTOR),
@@ -68,7 +82,8 @@ def main():
         (b"FLASHKRN.BIN;1", lba_kernel, len(kernel)),
         (b"LOADER.BIN;1", LBA_LOADER, SECTOR),
         (b"STAGE2.BIN;1", lba_s2, len(stage2)),
-    ]
+    ] + [(name, extra_lba[i], len(data)) for i, (name, data) in enumerate(extra)]
+    files.sort()
     root = dir_record(LBA_ROOT, SECTOR, 2, b"\0") + dir_record(LBA_ROOT, SECTOR, 2, b"\1")
     for name, lba, size in files:
         root += dir_record(lba, size, 0, name)
@@ -82,7 +97,7 @@ def main():
     pvd = bytearray(SECTOR)
     pvd[0:8] = b"\x01CD001\x01\x00"
     pvd[8:40] = b"FLASHOS".ljust(32)
-    pvd[40:72] = b"FLASHOS".ljust(32)
+    pvd[40:72] = label.ljust(32)
     pvd[80:88] = both32(total)
     pvd[120:124] = both16(1)
     pvd[124:128] = both16(1)
@@ -141,7 +156,7 @@ def main():
 
     img = (bytes(system_area) + bytes(pvd) + bytes(boot) + bytes(term) +
            pad(ptable_l) + pad(ptable_m) + pad(root) + pad(catalog) + loader_cd +
-           pad(kernel) + pad(stage2) + pad(fs))
+           pad(kernel) + pad(stage2) + pad(fs) + b"".join(pad(d) for _, d in extra))
     assert len(img) == total * SECTOR, (len(img), total * SECTOR)
     with open(out, "wb") as f:
         f.write(img)

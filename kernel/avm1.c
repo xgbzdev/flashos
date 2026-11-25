@@ -1620,7 +1620,12 @@ done:
 #define ARG(i) ((i) < n ? a[i] : vundef())
 #define THIS_CLIP inst *cl = val_clip(th); if (!cl) return vundef();
 
+#ifdef HOSTED
+#include <stdio.h>
+static val nf_trace(ctx *c, val th, val *a, int n) { (void)c; (void)th; if (n) printf("trace: %s\n", as_tostring(a[0])); return vundef(); }
+#else
 static val nf_trace(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vundef(); }
+#endif
 static val nf_getTimer(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vnum(plat_ms()); }
 static val nf_parseInt(ctx *c, val th, val *a, int n) {
     (void)c; (void)th;
@@ -3103,6 +3108,78 @@ static void flashos_video_api(obj *f) {
     def_native(f, "openVideo", nf_osOpenVideo);
 }
 
+#ifdef BYROTT
+/* ---- ByroTT edition: system calls for ByroTT and its setup ---- */
+const char *byr_launch_arg(void);
+int byr_installed(void);
+void byr_run(const char *name, const char *back, u32 color);
+void byr_power(int what);
+const char *byr_install(void);
+const char *byr_uninstall(void);
+static u8 *net_buf;
+static val nf_bInstall(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(byr_install()); }
+static val nf_bUninstall(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(byr_uninstall()); }
+static val nf_bInstalled(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vbool(byr_installed()); }
+static val nf_bRestart(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; byr_power(1); return vundef(); }
+static val nf_bShutdown(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; byr_power(2); return vundef(); }
+static val nf_bTerminal(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; byr_power(3); return vundef(); }
+static val nf_bRun(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    byr_run(as_tostring(ARG(0)), n > 1 ? as_tostring(a[1]) : "", n > 2 ? (u32)to_i32(a[2]) & 0xFFFFFF : 0);
+    return vundef();
+}
+static val nf_bArg(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(astrdup(byr_launch_arg())); }
+static val nf_bNet(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th; (void)a; (void)n;
+    int r = net_init();
+    if (r < 0) return vstr(r == -1 ? "no network card" : r == -2 ? "network cable unplugged" : "no answer from the network (DHCP)");
+    return vstr("ok");
+}
+/* {status, body, error} */
+static val nf_bHttp(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    obj *o = new_obj(obj_proto);
+    if (!o) return vobj(NULL);
+    const u32 cap = 4u << 20;
+    if (!net_buf) net_buf = amalloc(cap);
+    u8 *data = NULL;
+    u32 len = 0;
+    int status = 0;
+    static char err[64];
+    err[0] = 0;
+    if (net_buf && net_get_buf(as_tostring(ARG(0)), net_buf, cap, &data, &len, &status, err)) {
+        set_own(o, "status", vnum(status));
+        set_own(o, "body", vstr(bytes_to_str(data, len)));
+    } else {
+        set_own(o, "status", vnum(0));
+        set_own(o, "error", vstr(astrdup(err[0] ? err : "not enough memory")));
+    }
+    return vobj(o);
+}
+/* copy any file (CD, USB, ...) to the hard disk, byte for byte */
+static val nf_bCopy(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    u32 size;
+    const u8 *d = file_bytes(as_tostring(ARG(0)), &size);
+    return vbool(d && docs_write(as_tostring(ARG(1)), d, size));
+}
+static void byrott_api(obj *f) {
+    net_buf = NULL;
+    set_hidden(f, "edition", vstr("ByroTT"));
+    def_native(f, "install", nf_bInstall);
+    def_native(f, "uninstall", nf_bUninstall);
+    def_native(f, "isInstalled", nf_bInstalled);
+    def_native(f, "restart", nf_bRestart);
+    def_native(f, "shutdown", nf_bShutdown);
+    def_native(f, "terminal", nf_bTerminal);
+    def_native(f, "runSWF", nf_bRun);
+    def_native(f, "launchArg", nf_bArg);
+    def_native(f, "netConnect", nf_bNet);
+    def_native(f, "httpGet", nf_bHttp);
+    def_native(f, "copyFile", nf_bCopy);
+}
+#endif
+
 static void flashos_api(void) {
     obj *f = new_obj(obj_proto);
     f->captured = 1;
@@ -3120,6 +3197,9 @@ static void flashos_api(void) {
     def_native(f, "getClipboard", nf_osClipboard);
     def_native(f, "memoryKB", nf_osMem);
     def_native(f, "exit", nf_osExit);
+#ifdef BYROTT
+    byrott_api(f);
+#endif
     flashos_video_api(f);
 
     obj *ctor = mk_class("BitmapData", nf_BitmapData, &bmd_proto);

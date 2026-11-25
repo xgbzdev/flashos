@@ -15,6 +15,23 @@ int net_ping(const char *host, u32 *ms, char *err) { (void)host; (void)ms; kstrc
 int net_get(const char *url, u8 **data, u32 *len, int *status, char *err) {
     (void)url; (void)data; (void)len; (void)status; kstrcpy(err, "no network", 32); return 0;
 }
+/* simulator: pages come from files sim_web_<n>.html, picked by the URL */
+#include <stdio.h>
+int net_get_buf(const char *url, u8 *buf, u32 cap, u8 **data, u32 *len, int *status, char *err) {
+    char name[64];
+    unsigned h = 0;
+    for (const char *p = url; *p; p++) h = h * 31 + (u8)*p;
+    FILE *f = fopen("sim_web.html", "rb");
+    snprintf(name, sizeof name, "sim_web_%u.html", h % 4);
+    FILE *g = fopen(name, "rb");
+    if (g) { if (f) fclose(f); f = g; }
+    if (!f) { kstrcpy(err, "no network in the simulator", 48); return 0; }
+    *len = (u32)fread(buf, 1, cap - 1, f);
+    fclose(f);
+    *data = buf;
+    *status = 200;
+    return 1;
+}
 #else
 
 static inline void outb(u16 p, u8 v) { __asm__ volatile("outb %0, %1" : : "a"(v), "Nd"(p)); }
@@ -730,10 +747,15 @@ static int http_once(const char *url, u8 *buf, u32 cap, u32 *outlen, char *err) 
 
 /* Downloads url. *data points into buf (body only). */
 int net_get(const char *url, u8 **data, u32 *len, int *status, char *err) {
-    int r = net_init();
-    if (r < 0) { kstrcpy(err, r == -1 ? "no supported network card" : r == -2 ? "network cable unplugged" : "no DHCP answer from the network", 48); return 0; }
     u32 cap;
     u8 *buf = plat_heap2(&cap);
+    return net_get_buf(url, buf, cap, data, len, status, err);
+}
+
+/* the same, into a caller's buffer */
+int net_get_buf(const char *url, u8 *buf, u32 cap, u8 **data, u32 *len, int *status, char *err) {
+    int r = net_init();
+    if (r < 0) { kstrcpy(err, r == -1 ? "no supported network card" : r == -2 ? "network cable unplugged" : "no DHCP answer from the network", 48); return 0; }
     if (!buf || cap < (1u << 20)) { kstrcpy(err, "not enough memory", 48); return 0; }
     static char cur_url[512];
     kstrcpy(cur_url, url, sizeof cur_url);
