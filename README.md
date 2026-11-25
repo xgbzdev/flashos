@@ -198,53 +198,55 @@ It is a ray caster written in ActionScript that draws into a 256 × 160
 BitmapData with `BitmapData.draw`, shown 4× for a chunky pixel look. Font:
 Press Start 2P (SIL Open Font License).
 
-## ByroTT 2.0
+## ByroTT 3.0
 
-**`ByroTT.iso`** holds ByroTT 2.0, a desktop made in Flash with a
-2000s look, plus a special edition of FlashOS that starts it.
+**`ByroTT 3.0.iso`** (on GitHub: `ByroTT.3.0.iso`) holds ByroTT 3.0, a desktop
+made in Flash with a 2000s look, plus a special edition of FlashOS that
+starts it.
 
-1. Start the computer from `ByroTT.iso`. It looks like the normal FlashOS.
-2. Type `Byr.swf`. ByroTT Setup (pixel font, cyan panel) asks for the drive
-   (2 GB or more); press Space to go on, Esc to go back. FlashOS itself
-   asks you to confirm with Y.
-3. Restart. The FlashOS logo flashes quickly, then ByroTT starts, even if
-   the ByroTT CD is still in the drive. There is no way to the FlashOS
-   terminal while ByroTT is installed, and `Byr.swf` is hidden.
+    curl -L -o "ByroTT 3.0.iso" https://github.com/xgbzdev/flashos/releases/latest/download/ByroTT.3.0.iso
 
-ByroTT copies the look of its Scratch mock-up (`Byrott_1.sb3`): the pixel
-font GNU Unifont, an orange start button at the top left with a drop-down
-menu (Settings, Internet Navigator, Command Runner, Notepad, Paint, Volume, Restart,
-Shut Down), and File Manager and Ball Game V1.0 on the desktop. An app opens
-in a white window on black, with a thin title bar in the theme colour and a
-close box. SWFs from the Command Runner or File Manager play in the same kind
-of window. The icons are the mock-up's own drawings.
+1. Start the computer from the ISO. It looks like the normal FlashOS.
+2. Type `Byr.swf`. ByroTT Setup asks for the drive (2 GB or more); press
+   Space to go on, Esc to go back. FlashOS itself asks you to confirm with Y.
+3. Restart. The FlashOS logo flashes, "Loading...", then the login screen.
+   The ByroTT CD can stay in the drive. `Byr.swf` is hidden while ByroTT is
+   installed.
 
-* **Command Runner** (white text) plays SWFs, one at a time.
-* **File Manager** opens on three folders: Hard Disk (the files on the hard
-  disk, CD, USB and system), X Boot and Admin.
-* **Internet Navigator 2.0** is an http-only web browser that also shows
-  pictures (http only, up to 12 per page), with +Mark, Bookmarks and History
-  (saved on the disk). Without a network it asks you to connect your PC to a
-  FlashRouter.
-* **Notepad** (New, Open..., Save, Save as..., Print), **Paint** (pencil, brush, eraser, line, box, fill, 16
-  colours, undo; saves .bmp pictures and can make one your wallpaper), a
-  picture and video viewer (with Edit in Paint), and **Ball Game v2.0**:
-  dodge the balls, the level goes up every 15 seconds, catch the S (shield),
-  T (slow time) and W (wide bar) power-ups; the best 5 scores are saved.
-* **Clock and calendar** at the top right of the desktop; click the clock
-  for the month (with < and > to change it).
-* **Admin password**: set it in Settings. File Manager > Admin then asks for
-  it before showing the Private Folder. Hard Disk > Make private moves a
-  file there (and Make public moves it back).
-* **Printing** goes to the printer port LPT1 (Notepad's Print, or PRINT in
-  the Command Runner). In QEMU: `-parallel file:print.txt`. The mouse wheel
-  scrolls web pages and the Command Runner.
-* **Settings**: click a row to change the pointer colour (white, black, red,
-  green), the windows theme (Default, Orange, Green, Blue, Byrott) or the
-  wallpaper.
-* **Settings > Delete Byrott** writes the original FlashOS, which is stored
-  inside ByroTT, back to the disk. Saved files are kept, and `Byr.swf`
-  comes back.
+ByroTT keeps the look of its Scratch mock-up (`Byrott_1.sb3`): the pixel font
+GNU Unifont, white windows with black lines and thin title bars, and the
+mock-up's own icon drawings.
+
+* **Multitasking**: every app has its own window over the desktop. Drag a
+  window by its title bar, hide it with `_`, close it with the box. The
+  window in front has a bar in the theme colour.
+* **Taskbar** (top): the start button, a button for each window (click to
+  bring it to the front or hide it), and the clock (click for a calendar).
+* **Dock** (bottom left, in the theme colour): your apps, at least 4. The
+  `+` button adds or removes apps; when they do not fit, a black arrow
+  shows them all. The start menu is in the theme colour too.
+* **Login screen** with your name and picture, and a password if you set
+  one (Settings > User Account). Start menu > Log Off.
+* **Desktop shortcuts**: drag them around; File Manager > Add to desktop
+  adds a file; drop a shortcut on the Recycle Bin to take it away.
+* **File Manager**: Hard Disk, X Boot and Admin. Folders on the hard disk
+  (New folder, Move to..., Up). Delete moves files to the **Recycle Bin**
+  (Restore, Delete for ever, Empty).
+* **More Apps** (the store): get Snake, Minesweeper, Solitaire, Maze 3D and
+  Flash Notepad with one click, or download an .swf from an http:// address.
+* **Music Player**: plays MP3 files from the disk, CD or USB (a ByroTT theme
+  song is included); keeps playing when hidden.
+* **Games** that run in windows next to your other apps: Ball Game v2.0
+  (levels, power-ups, best scores), and from More Apps: Snake, Minesweeper
+  (Flag button or Shift+click) and Solitaire (click a card, then where it
+  goes; double-click sends it to its pile).
+* **Screensaver**: the bird logo bounces after 2 minutes (Settings).
+* **Command Runner**, **Internet Navigator 3.0** (pictures, bookmarks,
+  history, mouse wheel), **Notepad** (Open..., Print to LPT1), **Paint**,
+  the picture and video viewer, **Admin password** and Private Folder.
+* **Settings**: pointer colour, windows theme, wallpaper, user account,
+  screensaver, dock, admin password, Delete Byrott (puts FlashOS back; saved
+  files are kept).
 
 The normal FlashOS ISO is unchanged. The edition is the same source built
 with `-DBYROTT` (`make build/ByroTT.iso`). Pictures in `private/wallpapers/`

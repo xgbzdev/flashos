@@ -1,4 +1,4 @@
-// ByroTT 2.0 Setup (Byr.swf)
+// ByroTT 3.0 Setup (Byr.swf)
 // Copyright (c) 2026 FlashOS. All rights reserved.
 // Font: GNU Unifont (SIL Open Font License 1.1), like the Scratch mock-up.
 // A cyan panel on black, pixel text, keys: Space = next, Esc = back.
@@ -63,7 +63,7 @@ function logo(p, x, y, size, col) {
 function welcome() {
     var p = newPage();
     logo(p, PX + 50, PY + 46, 128, INK);
-    label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Welcome to\nByroTT 2.0", 32, INK);
+    label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Welcome to\nByroTT 3.0", 32, INK);
     body(p, PY + 210, "This Setup will install ByroTT on your hard disk.\n\n" +
          "ByroTT is a desktop with a terminal for SWF games, files, the internet, notepad and settings.\n\n" +
          "You can uninstall it at any time in Settings: FlashOS comes back.");

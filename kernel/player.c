@@ -1444,6 +1444,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         glyph_cache_reset();
         timeline *tl = make_timeline(swf + 8 + r.i, total - 8 - r.i);
         audio_init();
+        music_forget();
         audio_stop_all();
         stream_fmt = -1;
         as_init();
@@ -1486,6 +1487,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
 #endif
             first = 0;
             flv_tick_all();
+            music_tick();
             frac += frame_us;
             due += frac / 1000;
             frac %= 1000;

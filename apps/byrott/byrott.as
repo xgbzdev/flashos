@@ -1,4 +1,4 @@
-// ByroTT 2.0 - made to look like its Scratch mock-up (Byrott_1.sb3)
+// ByroTT 3.0 - made to look like its Scratch mock-up (Byrott_1.sb3)
 // Copyright (c) 2026 FlashOS. All rights reserved.
 // Fonts: GNU Unifont (SIL Open Font License 1.1); DejaVu Sans Condensed Bold
 // for the Loading screen (Bitstream Vera licence).
@@ -18,7 +18,8 @@ var THEME_NAMES = ["default", "orange", "green", "blue", "byrott"];
 var CURSORS = ["white", "black", "red", "green"];
 var CURSOR_COLS = {white: [0xFFFFFF, 0x000000], black: [0x000000, 0xFFFFFF], red: [0xFF2020, 0xFFFFFF], green: [0x20E040, 0xFFFFFF]};
 var CURSOR_NAMES = {white: "White", black: "Black", red: "Red", green: "Green"};
-var cfg = {wallpaper: "pyramids-planet.jpg", theme: "default", cursor: "white", volume: "80", muted: "0", pass: ""};
+var cfg = {wallpaper: "pyramids-planet.jpg", theme: "default", cursor: "white", volume: "80", muted: "0", pass: "",
+           dock: "files,web,notepad,music,store,settings", games: "", uname: "User", upic: "bird", upass: "", saver: "2"};
 var DEFAULT_WALL = "pyramids-planet.jpg";
 var C1, C2, C3;            // window theme: bar, bar fade, pale (selections)
 
@@ -36,8 +37,9 @@ function loadCfg() {
     applyColor();
 }
 function saveCfg() {
-    FlashOS.write("byrott.cfg", "wallpaper=" + cfg.wallpaper + "\ntheme=" + cfg.theme + "\ncursor=" + cfg.cursor +
-                  "\nvolume=" + cfg.volume + "\nmuted=" + cfg.muted + "\npass=" + cfg.pass + "\n");
+    var t = "";
+    for (var k in cfg) t += k + "=" + cfg[k] + "\n";
+    FlashOS.write("byrott.cfg", t);
 }
 function mix(a, b, t) {
     var c = 0, sh = 16;
@@ -237,71 +239,122 @@ function ask(title, msg, labels, done, danger) {
 function message(title, msg) { ask(title, msg, ["OK"], null); }
 
 // ---------------------------------------------------------------- app windows
-// One app at a time, in a window on pure black: a bar in the theme colour
-// with the title and a close box, then a white body (black for the Command
-// Runner and the Viewer). The desktop comes back when it is closed.
-var wins = {};          // the open app, by id (at most one)
-var winOrder = [];
+// ByroTT 3.0 multitasks: every app has its own window over the desktop.
+// Drag a window by its title bar; "_" hides it (its button stays in the
+// taskbar), the close box closes it. The window in front has a bar in the
+// theme colour, the others a grey one.
+var wins = {};          // the open windows, by app id
+var winOrder = [];      // in the order they were opened
 var winDepth = 10;
-var curApp = null;
+var curApp = null;      // the window in front
+var winCount = 0;
 var WBAR = 30, WGAP = 2, WPAD = 10;
+var TOP_H = 44, DOCK_H = 84;            // the taskbar (top) and the dock (bottom)
 
-function focusWin(w) {}
+function topWindow() {
+    var best = null;
+    for (var i = 0; i < winOrder.length; i++) {
+        var w = winOrder[i];
+        if (w._visible && (!best || w.getDepth() > best.getDepth())) best = w;
+    }
+    return best;
+}
+function focusWin(w) {
+    if (!w) return;
+    var old = curApp;
+    curApp = w;
+    w._visible = true;
+    w.minimized = false;
+    w.swapDepths(++winDepth);
+    if (old && old != w && wins[old.id] == old) old.paintBar();
+    w.paintBar();
+    var f = Selection.getFocus();
+    if (f == null || f.indexOf("w_" + w.id) < 0) Selection.setFocus(w.focusField ? w.focusField : null);
+    updateTasks();
+}
+function minimizeWin(w) {
+    w._visible = false;
+    w.minimized = true;
+    var f = Selection.getFocus();
+    if (f != null && f.indexOf("w_" + w.id) >= 0) Selection.setFocus(null);
+    if (curApp == w) { curApp = topWindow(); if (curApp) curApp.paintBar(); }
+    updateTasks();
+}
 function makeWindow(id, title, ww, hh, dark, onClose) {
-    if (curApp && curApp.id == id) return null;
-    if (curApp) closeWindow(curApp);
+    if (wins[id]) { focusWin(wins[id]); return null; }
     closeMenu();
     closeCalendar();
     var w = winLayer.createEmptyMovieClip("w_" + id, ++winDepth);
-    w.id = id; w.w = ww; w.h = hh; w.title = title; w.onCloseFn = onClose;
+    w.id = id; w.w = ww; w.h = hh; w.title = title; w.onCloseFn = onClose; w.minimized = false;
     var ow = ww + WPAD * 2, oh = WBAR + WGAP + hh + WPAD * 2;
-    var wx = Math.round((W - ow) / 2), wy = Math.max(0, Math.round((H - oh) / 2));
+    w.ow = ow; w.oh = oh;
+    // a little down and right of the last one
+    var room = H - TOP_H - DOCK_H, n = winCount++ % 6;
+    var x = Math.round((W - ow) / 2) - 50 + n * 24, y = TOP_H + Math.max(0, Math.round((room - oh) / 2)) - 30 + n * 24;
+    if (x + ow > W) x = W - ow;
+    if (x < 0) x = 0;
+    if (y + oh > H - DOCK_H) y = H - DOCK_H - oh;
+    if (y < TOP_H) y = TOP_H;
+    w._x = x; w._y = y;
+    var shadow = w.createEmptyMovieClip("shadow", 0);
+    box(shadow, 6, 6, ow, oh, 0x000000, 0, 0, 0);
+    shadow._alpha = 35;
     w.frame = w.createEmptyMovieClip("frame", 1);
-    box(w.frame, 0, 0, W, H, 0x000000, 0, 0, 0);
-    w.frame.onPress = function () {
-        var f = Selection.getFocus();
-        if (f == null || f.indexOf("w_" + w.id) < 0) Selection.setFocus(w.focusField ? w.focusField : null);
-    };
-    w.frame.useHandCursor = false;
+    box(w.frame, -2, -2, ow + 4, oh + 4, INK, 0, 0, 0);    // the black frame
     w.barClip = w.createEmptyMovieClip("bar", 2);
     w.bodyBg = w.createEmptyMovieClip("bodybg", 3);
-    box(w.bodyBg, wx, wy + WBAR + WGAP, ow, hh + WPAD * 2, dark ? 0x000000 : BODY, dark ? 0x606060 : INK, 2, 0);
-    w.titleTxt = label(w, "tt", 5, wx + 8, wy + 6, ow - 60, 22, title, 16, onC1(), false);
+    box(w.bodyBg, 0, WBAR + WGAP, ow, hh + WPAD * 2, dark ? 0x000000 : BODY, 0, 0, 0);
+    w.titleTxt = label(w, "tt", 5, 8, 6, ow - 90, 22, title, 16, onC1(), false);
     w.body = w.createEmptyMovieClip("body", 10);
-    w.body._x = wx + WPAD;
-    w.body._y = wy + WBAR + WGAP + WPAD;
+    w.body._x = WPAD;
+    w.body._y = WBAR + WGAP + WPAD;
     w.paintBar = function () {
+        var on = curApp == this;
         this.barClip.clear();
-        titleBar(this.barClip, wx, wy, ow, WBAR);
-        closeBox(this.barClip, wx + ow - 30, wy + 4, 22);
-        this.titleTxt.textColor = onC1();
+        if (on) titleBar(this.barClip, 0, 0, this.ow, WBAR);
+        else box(this.barClip, 0, 0, this.ow, WBAR, 0xA8A8A8, 0, 0, 0);
+        closeBox(this.barClip, this.ow - 28, 4, 22);
+        // the minimize box: white with a line at the bottom
+        box(this.barClip, this.ow - 56, 4, 22, 22, WHITE, INK, 2, 0);
+        box(this.barClip, this.ow - 51, 19, 12, 3, INK, 0, 0, 0);
+        this.titleTxt.textColor = on ? onC1() : 0x303030;
     };
-    var x = w.createEmptyMovieClip("x", 20);         // the close box takes the clicks
-    box(x, wx + ow - 32, wy, 32, WBAR, 0xFFFFFF, 0, 0, 0);
-    x._alpha = 0;
-    x.onRelease = function () { closeWindow(w); };
-    w.xb = x;
-    w.paintBar();
-    wins = {};
+    // the title bar drags the window
+    var dr = w.createEmptyMovieClip("drag", 4);
+    box(dr, 0, 0, ow - 60, WBAR, 0xFFFFFF, 0, 0, 0);
+    dr._alpha = 0;
+    dr.useHandCursor = false;
+    dr.onPress = function () {
+        focusWin(w);
+        w.startDrag(false, 60 - ow, TOP_H, W - 60, H - WBAR - 8);
+    };
+    dr.onRelease = dr.onReleaseOutside = function () { w.stopDrag(); };
+    var mn = w.createEmptyMovieClip("mn", 20);
+    box(mn, ow - 58, 0, 28, WBAR, 0xFFFFFF, 0, 0, 0);
+    mn._alpha = 0;
+    mn.onRelease = function () { minimizeWin(w); };
+    var x2 = w.createEmptyMovieClip("x", 21);
+    box(x2, ow - 30, 0, 30, WBAR, 0xFFFFFF, 0, 0, 0);
+    x2._alpha = 0;
+    x2.onRelease = function () { closeWindow(w); };
+    w.xb = x2;
     wins[id] = w;
-    winOrder = [w];
-    curApp = w;
-    taskbar._visible = false;
-    deskIcons._visible = false;
-    wallClip._visible = false;
+    winOrder.push(w);
+    focusWin(w);
     return w;
 }
 function closeWindow(w) {
     if (!w) return;
     if (w.onCloseFn) w.onCloseFn();
     if (Selection.getFocus() != null && Selection.getFocus().indexOf("w_" + w.id) >= 0) Selection.setFocus(null);
+    if (wins[w.id] == w) delete wins[w.id];
+    for (var i = 0; i < winOrder.length; i++) if (winOrder[i] == w) { winOrder.splice(i, 1); break; }
     w.removeMovieClip();
-    if (curApp == w) { curApp = null; wins = {}; winOrder = []; }
-    taskbar._visible = true;
-    deskIcons._visible = true;
-    wallClip._visible = true;
+    if (curApp == w) { curApp = topWindow(); if (curApp) { curApp.paintBar(); var ff = curApp.focusField; if (ff) Selection.setFocus(ff); } }
+    updateTasks();
 }
-function repaintWindows() { for (var key in wins) wins[key].paintBar(); }
+function repaintWindows() { for (var i = 0; i < winOrder.length; i++) winOrder[i].paintBar(); }
+function isFront(id) { return curApp != null && curApp == wins[id]; }
 
 // ---------------------------------------------------------------- wallpaper
 var wallCache = {};
@@ -330,66 +383,195 @@ function systemWallpapers() {
     return out;
 }
 
-// ---------------------------------------------------------------- desktop
-// like the mock-up: the start button at the top left, the icons under it
-var APPS = [["files", "File Manager"], ["ball", "Ball Game V2.0"]];
-// the start menu
-var MENU_APPS = [["settings", "Settings"], ["web", "Internet\n Navigator"], ["term", "Command\nRunner\n(FlashOS)"], ["notepad", "Notepad"], ["paint", "Paint"]];
+// ---------------------------------------------------------------- apps
+// id: name, icon
+var APPDEF = {files: ["File Manager", "files"], web: ["Internet Navigator", "web"], term: ["Command Runner", "term"],
+              notepad: ["Notepad", "notepad"], paint: ["Paint", "paint"], music: ["Music Player", "music"],
+              settings: ["Settings", "settings"], store: ["More Apps", "store"], ball: ["Ball Game", "ball"],
+              bin: ["Recycle Bin", "bin"], snake: ["Snake", "snake"], mines: ["Minesweeper", "mines"],
+              solitaire: ["Solitaire", "solitaire"], viewer: ["Viewer", "img"]};
+var BUILTIN = ["files", "web", "term", "notepad", "paint", "music", "ball", "store", "settings", "bin"];
+var STORE_GAMES = ["snake", "mines", "solitaire"];
+// the apps on this computer: the built-in ones and the games from the Store
+function installedApps() {
+    var out = BUILTIN.slice(0), g = cfg.games == "" ? [] : cfg.games.split(",");
+    for (var i = 0; i < g.length; i++) if (APPDEF[g[i]]) out.push(g[i]);
+    return out;
+}
+function appIcon(id) { return APPDEF[id] ? (id == "bin" && binCount() > 0 ? "bin_full" : APPDEF[id][1]) : "file"; }
 function launch(id) {
     closeMenu();
+    if (wins[id] && id != "viewer") { focusWin(wins[id]); return; }
     if (id == "term") openTerminal("");
     else if (id == "files") openFiles();
     else if (id == "web") openWeb();
     else if (id == "notepad") openNotepad(null);
     else if (id == "paint") openPaint(null);
     else if (id == "settings") openSettings("");
-    else if (id == "ball") runSWF("ballgame.swf", "");
+    else if (id == "music") openMusic();
+    else if (id == "store") openStore();
+    else if (id == "bin") openBin();
+    else if (id == "ball") openBall();
+    else if (id == "snake") openSnake();
+    else if (id == "mines") openMines();
+    else if (id == "solitaire") openSolitaire();
+}
+
+// ---------------------------------------------------------------- desktop shortcuts
+// icons on the desktop: apps or files. Drag them where you like; drop one
+// on the Recycle Bin to take it off the desktop. Saved in byrott.desk.
+var desk = [];          // {kind: "app" or "file", target, x, y}
+function deskDefaults() {
+    return [{kind: "app", target: "files", x: 12, y: 56}, {kind: "app", target: "ball", x: 12, y: 168},
+            {kind: "app", target: "store", x: 12, y: 280}, {kind: "app", target: "bin", x: 12, y: 392}];
+}
+function deskLoad() {
+    var t = FlashOS.read("byrott.desk");
+    desk = [];
+    if (t == null) { desk = deskDefaults(); return; }
+    var ls = t.split("\n");
+    for (var i = 0; i < ls.length; i++) {
+        var p = ls[i].split("\t");
+        if (p.length >= 4) desk.push({kind: p[0], target: p[1], x: Number(p[2]), y: Number(p[3])});
+    }
+}
+function deskSave() {
+    var t = "";
+    for (var i = 0; i < desk.length; i++) t += desk[i].kind + "\t" + desk[i].target + "\t" + desk[i].x + "\t" + desk[i].y + "\n";
+    FlashOS.write("byrott.desk", t);
+}
+function deskHas(kind, target) { for (var i = 0; i < desk.length; i++) if (desk[i].kind == kind && desk[i].target == target) return true; return false; }
+// the first free place on the grid (columns of 112 px)
+function deskFree() {
+    for (var cx = 12; cx < W - 150; cx += 156)
+        for (var cy = 56; cy < H - DOCK_H - 100; cy += 112) {
+            var used = false;
+            for (var i = 0; i < desk.length; i++) if (Math.abs(desk[i].x - cx) < 60 && Math.abs(desk[i].y - cy) < 60) used = true;
+            if (!used) return [cx, cy];
+        }
+    return [12, 56];
+}
+function deskAdd(kind, target) {
+    if (deskHas(kind, target)) return false;
+    var p = deskFree();
+    desk.push({kind: kind, target: target, x: p[0], y: p[1]});
+    deskSave();
+    buildIcons();
+    return true;
+}
+function deskRemove(kind, target) {
+    for (var i = 0; i < desk.length; i++) if (desk[i].kind == kind && desk[i].target == target) { desk.splice(i, 1); deskSave(); buildIcons(); return; }
+}
+function deskLabel(d) {
+    if (d.kind == "app") return APPDEF[d.target] ? APPDEF[d.target][0] : d.target;
+    var n = d.target, k = n.lastIndexOf("/");
+    return k >= 0 ? n.substr(k + 1) : n;
 }
 function buildIcons() {
-    for (var i = 0; i < APPS.length; i++) {
-        var ic = deskIcons["i" + i];
-        if (ic) continue;
-        ic = deskIcons.createEmptyMovieClip("i" + i, i + 1);
-        ic._x = 12; ic._y = 96 + i * 112;
+    // rebuild them all (cheap: a few clips)
+    for (var k = 0; k < 64; k++) if (deskIcons["i" + k]) deskIcons["i" + k].removeMovieClip();
+    for (var i = 0; i < desk.length && i < 64; i++) {
+        var d = desk[i];
+        var ic = deskIcons.createEmptyMovieClip("i" + i, i + 1);
+        ic._x = d.x; ic._y = d.y;
         ic.hl = ic.createEmptyMovieClip("hl", 1);
         box(ic.hl, 0, 0, 150, 100, 0xFFFFFF, 0, 0, 0);
         ic.hl._alpha = 0;
-        icon(ic, "g", 2, 43, 4, APPS[i][0], false);
-        ic.sh = label(ic, "sh", 3, 1, 73, 150, 22, APPS[i][1], 16, INK, false, "center");
-        ic.t = label(ic, "t", 4, 0, 72, 150, 22, APPS[i][1], 16, WHITE, false, "center");
-        ic.app = APPS[i][0];
+        icon(ic, "g", 2, 43, 4, d.kind == "app" ? appIcon(d.target) : fileKind(d.target), false);
+        if (d.kind == "file") { var ar = ic.createEmptyMovieClip("ar", 5); box(ar, 43, 50, 16, 16, WHITE, INK, 2, 0); ar.lineStyle(2, INK, 100); ar.moveTo(47, 62); ar.lineTo(55, 54); ar.moveTo(50, 54); ar.lineTo(55, 54); ar.lineTo(55, 59); }
+        var lb = deskLabel(d);
+        ic.sh = label(ic, "sh", 3, 1, 73, 150, 22, lb, 16, INK, false, "center");
+        ic.t = label(ic, "t", 4, 0, 72, 150, 22, lb, 16, WHITE, false, "center");
+        ic.d = d;
         ic.onRollOver = function () { this.hl._alpha = 25; };
         ic.onRollOut = function () { this.hl._alpha = 0; };
-        ic.onRelease = function () { this.hl._alpha = 0; launch(this.app); };   // one click, like the mock-up
+        ic.onPress = function () { this.sx = this._x; this.sy = this._y; this.swapDepths(200); this.startDrag(false, 0, TOP_H, W - 150, H - DOCK_H - 96); };
+        ic.onRelease = ic.onReleaseOutside = function () {
+            this.stopDrag();
+            this.hl._alpha = 0;
+            var d2 = this.d;
+            if (Math.abs(this._x - this.sx) < 5 && Math.abs(this._y - this.sy) < 5) {     // a click: open it
+                this._x = this.sx; this._y = this.sy;
+                if (d2.kind == "app") launch(d2.target); else openFile(d2.target);
+                return;
+            }
+            // dropped on the Recycle Bin: off the desktop
+            for (var j = 0; j < desk.length; j++) {
+                var o = desk[j];
+                if (o != d2 && o.kind == "app" && o.target == "bin" && Math.abs(o.x - this._x) < 70 && Math.abs(o.y - this._y) < 60) {
+                    if (d2.kind == "app" && d2.target == "bin") break;
+                    deskRemove(d2.kind, d2.target);
+                    return;
+                }
+            }
+            d2.x = Math.round(this._x); d2.y = Math.round(this._y);
+            deskSave();
+        };
     }
 }
 
-// ---------------------------------------------------------------- the start button
-var startBtn;
+// ---------------------------------------------------------------- the taskbar (top)
+// the start button, a button for each open window, and the clock
+var startBtn, tbBg, taskBtns = null;
 function paintTaskbar() {
-    if (!startBtn) {
+    if (!tbBg) {
+        tbBg = taskbar.createEmptyMovieClip("bg", 1);
         startBtn = taskbar.createEmptyMovieClip("start", 3);
-        startBtn._x = 12; startBtn._y = 12;
+        startBtn._x = 4; startBtn._y = 4;
         startBtn.g = startBtn.createEmptyMovieClip("g", 1);
-        picture(startBtn, "pic", 2, 0, 0, "start_btn.png");
+        startBtn.ar = startBtn.createEmptyMovieClip("ar", 2);   // its own clip: overlapping fills would cancel the click
         startBtn.onRelease = function () { if (menuOpen) closeMenu(); else openStart(); };
     }
-    startBtn.g.clear();
-    box(startBtn.g, 0, 0, 64, 60, ORANGE, 0, 0, 0);
+    tbBg.clear();
+    box(tbBg, 0, 0, W, TOP_H, WHITE, 0, 0, 0);
+    box(tbBg, 0, TOP_H - 2, W, 2, INK, 0, 0, 0);
+    var g = startBtn.g;
+    g.clear();
+    box(g, 0, 0, 44, 36, C1, INK, 2, 0);
+    // the white down arrow of the mock-up's start button, in the theme's text colour
+    g = startBtn.ar;
+    g.clear();
+    g.beginFill(onC1(), 100);
+    g.moveTo(17, 6); g.lineTo(27, 6); g.lineTo(27, 18); g.lineTo(34, 18); g.lineTo(22, 31); g.lineTo(10, 18); g.lineTo(17, 18); g.lineTo(17, 6);
+    g.endFill();
+    updateTasks();
+    paintDock();
 }
-function updateTasks() {}
+function updateTasks() {
+    if (!tbBg) return;
+    if (taskBtns) taskBtns.removeMovieClip();
+    taskBtns = taskbar.createEmptyMovieClip("tasks", 4);
+    var n = winOrder.length;
+    if (n == 0) return;
+    var x0 = 56, room = W - 230 - x0, bw = Math.min(190, Math.floor(room / n) - 4);
+    for (var i = 0; i < n; i++) {
+        var w = winOrder[i];
+        var b = taskBtns.createEmptyMovieClip("b" + i, i + 1);
+        b._x = x0 + i * (bw + 4); b._y = 4;
+        var on = curApp == w && !w.minimized;
+        box(b, 0, 0, bw, 36, on ? C3 : (w.minimized ? 0xE0E0E0 : WHITE), INK, on ? 3 : 2, 0);
+        icon(b, "ic", 1, 4, 2, appIcon(w.id), true);
+        var t = w.titleTxt.text;
+        label(b, "t", 2, 40, 9, bw - 44, 22, t, 16, w.minimized ? GREY : INK, false);
+        b.w = w;
+        b.onRelease = function () {
+            if (curApp == this.w && !this.w.minimized) minimizeWin(this.w);
+            else focusWin(this.w);
+        };
+    }
+}
 function two(n) { return n < 10 ? "0" + n : "" + n; }
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// the clock: a white box at the top right; click it for the calendar
+// the clock: at the right of the taskbar; click it for the calendar
 var clockClip = null, clockT, dateT, lastMin = -1, calOpen = false, calMonth, calYear;
 var MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 function buildClock() {
     clockClip = taskbar.createEmptyMovieClip("clock", 5);
-    clockClip._x = W - 212; clockClip._y = 12;
-    box(clockClip, 0, 0, 200, 64, WHITE, INK, 2, 0);
-    clockT = label(clockClip, "t", 1, 0, 4, 200, 36, "", 32, INK, false, "center");
-    dateT = label(clockClip, "d", 2, 0, 38, 200, 22, "", 16, GREY, false, "center");
+    clockClip._x = W - 172; clockClip._y = 4;
+    box(clockClip, 0, 0, 168, 36, WHITE, INK, 2, 0);
+    clockT = label(clockClip, "t", 1, 6, 9, 50, 22, "", 16, INK, false);
+    dateT = label(clockClip, "d", 2, 52, 9, 112, 22, "", 16, GREY, false, "right");
     clockClip.onRelease = function () { if (calOpen) closeCalendar(); else openCalendar(); };
     lastMin = -1;
     tick();
@@ -400,7 +582,7 @@ function tick() {
     if (d.getMinutes() == lastMin) return;
     lastMin = d.getMinutes();
     clockT.text = two(d.getHours()) + ":" + two(d.getMinutes());
-    dateT.text = DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();
+    dateT.text = DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()];
 }
 setInterval(tick, 1000);
 function closeCalendar() {
@@ -424,7 +606,7 @@ function openCalendar() {
 function drawCalendar() {
     var p = menuLayer.createEmptyMovieClip("cal", 6);    // replaces the old one
     var pw = 300, ph = 300;
-    p._x = W - 12 - pw; p._y = 80;
+    p._x = W - 4 - pw; p._y = TOP_H;
     var g = p.createEmptyMovieClip("g", 1);
     titleBar(g, 0, 0, pw, 28);
     box(g, 0, 30, pw, ph - 30, WHITE, INK, 2, 0);
@@ -445,6 +627,141 @@ function drawCalendar() {
     }
 }
 
+// ---------------------------------------------------------------- the dock (bottom)
+// your favourite apps, in the theme colour; at least 4. The + button adds or
+// removes apps; when they do not fit, a black arrow shows them all.
+var dockClip = null, DOCK_MAX = 9;
+function dockApps() {
+    var l = cfg.dock == "" ? [] : cfg.dock.split(","), out = [], inst = installedApps();
+    for (var i = 0; i < l.length; i++) for (var k = 0; k < inst.length; k++) if (inst[k] == l[i]) { out.push(l[i]); break; }
+    return out;
+}
+function paintDock() {
+    if (dockClip) dockClip.removeMovieClip();
+    dockClip = taskbar.createEmptyMovieClip("dock", 10);
+    var apps = dockApps(), more = apps.length > DOCK_MAX, shown = more ? DOCK_MAX - 1 : apps.length;
+    var slot = 72, n = shown + 1 + (more ? 1 : 0);          // + the edit button (and the arrow)
+    var dw = n * slot + 16, dx = 4, dy = H - DOCK_H + 6;          // the bottom left corner
+    var g = dockClip.createEmptyMovieClip("g", 1);
+    box(g, dx, dy, dw, 74, C1, INK, 2, 0);
+    var tip = null;
+    for (var i = 0; i < shown; i++) {
+        var id = apps[i];
+        var b = dockClip.createEmptyMovieClip("a" + i, 10 + i);
+        b._x = dx + 8 + i * slot; b._y = dy + 2;
+        b.hl = b.createEmptyMovieClip("hl", 1);
+        box(b.hl, 0, 0, slot, 68, 0xFFFFFF, 0, 0, 0);
+        b.hl._alpha = 0;
+        icon(b, "ic", 2, 4, 1, appIcon(id), false);
+        if (wins[id]) circle(b, slot / 2, 64, 3, onC1());         // running
+        b.id = id;
+        b.onRollOver = function () { this.hl._alpha = 30; dockTip(this); };
+        b.onRollOut = function () { this.hl._alpha = 0; dockTip(null); };
+        b.onRelease = function () { dockTip(null); launch(this.id); };
+    }
+    var ex = dx + 8 + shown * slot;
+    if (more) {
+        var ar = dockClip.createEmptyMovieClip("more", 50);
+        ar._x = ex; ar._y = dy + 2;
+        box(ar, 6, 8, slot - 12, 52, WHITE, INK, 2, 0);
+        var tri = ar.createEmptyMovieClip("tri", 1);       // own clip: fills that overlap cancel clicks
+        tri.beginFill(INK, 100); tri.moveTo(26, 18); tri.lineTo(48, 34); tri.lineTo(26, 50); tri.lineTo(26, 18); tri.endFill();
+        ar.onRelease = function () { dockAll(); };
+        ex += slot;
+    }
+    var ed = dockClip.createEmptyMovieClip("edit", 51);
+    ed._x = ex; ed._y = dy + 2;
+    box(ed, 14, 16, slot - 28, 36, WHITE, INK, 2, 0);
+    label(ed, "t", 1, 14, 22, slot - 28, 22, "+", 16, INK, false, "center");
+    ed.onRelease = function () { dockEdit(); };
+}
+function dockTip(b) {
+    if (dockClip.tip) dockClip.tip.removeMovieClip();
+    if (!b) return;
+    var t = dockClip.createEmptyMovieClip("tip", 90), name = APPDEF[b.id][0];
+    var tw = name.length * 8 + 16;
+    t._x = Math.max(2, Math.round(b._x + 36 - tw / 2)); t._y = b._y - 34;
+    box(t, 0, 0, tw, 26, WHITE, INK, 2, 0);
+    label(t, "t", 1, 0, 4, tw, 22, name, 16, INK, false, "center");
+}
+// the arrow: every app of the dock
+function dockAll() {
+    closeMenu();
+    menuOpen = true;
+    var c = menuLayer.createEmptyMovieClip("catcher", 1);
+    box(c, 0, 0, W, H, 0xFFFFFF, 0, 0, 0);
+    c._alpha = 0;
+    c.onPress = function () { closeMenu(); };
+    c.useHandCursor = false;
+    var apps = dockApps(), cols = 5, rows = Math.ceil(apps.length / cols);
+    var p = menuLayer.createEmptyMovieClip("panel", 2);
+    var pw = cols * 160 + 20, ph = rows * 100 + 50;
+    p._x = 4; p._y = H - DOCK_H - ph;
+    var g = p.createEmptyMovieClip("g", 1);
+    box(g, 0, 0, pw, ph, C1, INK, 2, 0);
+    label(p, "t", 2, 12, 8, 300, 22, "All dock apps", 16, onC1(), false);
+    for (var i = 0; i < apps.length; i++) {
+        var b = p.createEmptyMovieClip("a" + i, 10 + i);
+        b._x = 10 + (i % cols) * 160; b._y = 40 + Math.floor(i / cols) * 100;
+        b.hl = b.createEmptyMovieClip("hl", 1);
+        box(b.hl, 0, 0, 160, 96, 0xFFFFFF, 0, 0, 0);
+        b.hl._alpha = 0;
+        icon(b, "ic", 2, 48, 4, appIcon(apps[i]), false);
+        label(b, "t", 3, 0, 70, 160, 22, APPDEF[apps[i]][0], 16, onC1(), false, "center");
+        b.id = apps[i];
+        b.onRollOver = function () { this.hl._alpha = 30; };
+        b.onRollOut = function () { this.hl._alpha = 0; };
+        b.onRelease = function () { launch(this.id); };
+    }
+}
+// add or remove apps (at least 4 stay)
+function dockEdit() {
+    closeMenu();
+    var d = dialogLayer.createEmptyMovieClip("dim", 1);
+    box(d, 0, 0, W, H, 0x000000, 0, 0, 0);
+    d._alpha = 50;
+    d.onPress = function () {};
+    d.useHandCursor = false;
+    var p = dialogLayer.createEmptyMovieClip("panel", 2);
+    var apps = installedApps(), cols = 2, pw = 620, ph = 120 + Math.ceil(apps.length / cols) * 48;
+    p._x = (W - pw) / 2; p._y = Math.max(TOP_H, (H - ph) / 2);
+    var g = p.createEmptyMovieClip("g", 1);
+    titleBar(g, 0, 0, pw, 28);
+    box(g, 0, 30, pw, ph - 30, WHITE, INK, 2, 0);
+    label(p, "t", 2, 8, 5, pw - 20, 22, "Dock: tick the apps you want (at least 4)", 16, onC1(), false);
+    for (var i = 0; i < apps.length; i++) {
+        var r = p.createEmptyMovieClip("r" + i, 10 + i);
+        r._x = 20 + (i % cols) * 300; r._y = 44 + Math.floor(i / cols) * 48;
+        r.cb = r.createEmptyMovieClip("cb", 1);
+        icon(r, "ic", 2, 30, 4, appIcon(apps[i]), true);
+        label(r, "t", 3, 68, 10, 220, 22, APPDEF[apps[i]][0], 16, INK, false);
+        r.id = apps[i];
+        r.paint = function () {
+            this.cb.clear();
+            box(this.cb, 0, 10, 20, 20, WHITE, INK, 2, 0);
+            var on = false, l = dockApps();
+            for (var k = 0; k < l.length; k++) if (l[k] == this.id) on = true;
+            if (on) { this.cb.lineStyle(3, INK, 100); this.cb.moveTo(4, 20); this.cb.lineTo(9, 25); this.cb.lineTo(16, 14); this.cb.lineStyle(); }
+        };
+        r.paint();
+        r.onRelease = function () {
+            var l = dockApps(), at = -1;
+            for (var k = 0; k < l.length; k++) if (l[k] == this.id) at = k;
+            if (at >= 0) {
+                if (l.length <= 4) { label(p, "warn", 60, 20, ph - 50, 360, 22, "The dock needs at least 4 apps.", 16, 0xC00000, false); return; }
+                l.splice(at, 1);
+            } else l.push(this.id);
+            cfg.dock = l.join(",");
+            saveCfg();
+            paintDock();
+            this.paint();
+            if (p.warn) p.warn.text = "";
+        };
+    }
+    button(p, "ok", 50, pw - 120, ph - 56, 100, 40, "OK", function () { closeDialog(); }, 1, 16);
+    dialogKeys = function (code) { if (code == 13 || code == 27) closeDialog(); };
+}
+
 // ---------------------------------------------------------------- volume
 function applyVolume() {
     if (FlashOS.setVolume) { FlashOS.setVolume(Number(cfg.volume)); FlashOS.setMuted(cfg.muted == "1"); }
@@ -452,29 +769,24 @@ function applyVolume() {
 function closeVolume() {}
 
 // ---------------------------------------------------------------- start menu
-// an orange panel that drops down from the start button
-var menuOpen = false, MENU_W = 330;
+// drops down from the start button, in the theme colour: your picture and
+// name, the apps on the left; Volume, Log Off, Restart, Shut Down on the right
+var menuOpen = false;
 function closeMenu() {
     if (!menuOpen) return;
     menuLayer.panel.removeMovieClip();
     menuLayer.catcher.removeMovieClip();
     menuOpen = false;
 }
-function menuRow(p, name, depth, y, h, kind, text, onClick) {
+function menuRow(p, name, depth, x, y, w, h, kind, text, onClick, col) {
     var r = p.createEmptyMovieClip(name, depth);
-    r._y = y;
+    r._x = x; r._y = y;
     r.hl = r.createEmptyMovieClip("hl", 1);
-    box(r.hl, 0, 0, MENU_W, h, MENU_HI, 0, 0, 0);
+    box(r.hl, 0, 0, w, h, 0xFFFFFF, 0, 0, 0);
     r.hl._alpha = 0;
-    icon(r, "ic", 2, 8, Math.round((h - 64) / 2), kind, false);
-    var t = label(r, "t", 4, 82, 0, MENU_W - 84, h + 40, "", 32, 0xFFFFFF, false);
-    t.multiline = true;
-    t.text = text;
-    t._y = Math.round((h - text.split("\n").length * 34) / 2) - 2;
-    var sh = label(r, "sh", 3, 84, t._y + 2, MENU_W - 84, h + 40, "", 32, 0xC86400, false);
-    sh.multiline = true;
-    sh.text = text;
-    r.onRollOver = function () { this.hl._alpha = 100; };
+    icon(r, "ic", 2, 6, Math.round((h - 32) / 2), kind, true);
+    label(r, "t", 4, 46, Math.round((h - 20) / 2), w - 50, 22, text, 16, col, false);
+    r.onRollOver = function () { this.hl._alpha = 35; };
     r.onRollOut = function () { this.hl._alpha = 0; };
     r.onRelease = onClick;
     return r;
@@ -488,36 +800,40 @@ function openStart() {
     c.onPress = function () { closeMenu(); };
     c.useHandCursor = false;
     var p = menuLayer.createEmptyMovieClip("panel", 2);
-    var pw = MENU_W;
-    p._x = 12; p._y = 72;
+    p._x = 4; p._y = TOP_H;
+    var apps = installedApps(), LW = 300, RW = 230, rowH = 42;
+    var ph = 72 + Math.max(apps.length * rowH + 12, 330);
     var g = p.createEmptyMovieClip("g", 1);
-    var y = 6, i;
-    for (i = 0; i < MENU_APPS.length; i++) {
-        var hh = Math.max(72, MENU_APPS[i][1].split("\n").length * 34 + 8);
-        var r = menuRow(p, "a" + i, 10 + i, y, hh, MENU_APPS[i][0], MENU_APPS[i][1], null);
-        r.app = MENU_APPS[i][0];
+    box(g, 0, 0, LW + RW, ph, C1, INK, 2, 0);
+    box(g, LW, 72, RW, ph - 74, C3, 0, 0, 0);
+    box(g, 2, 70, LW + RW - 4, 2, INK, 0, 0, 0);
+    // you
+    var av = picture(p, "av", 2, 10, 8, "avatar_" + cfg.upic + ".png");
+    av._xscale = av._yscale = 44;
+    label(p, "un", 3, 76, 18, 400, 40, cfg.uname, 32, onC1(), false);
+    for (var i = 0; i < apps.length; i++) {
+        var r = menuRow(p, "a" + i, 10 + i, 4, 78 + i * rowH, LW - 8, rowH, appIcon(apps[i]), APPDEF[apps[i]][0], null, onC1());
+        r.app = apps[i];
         r.onRelease = function () { launch(this.app); };
-        y += hh;
     }
     // Volume: the speaker mutes, the slider sets the level
     var v = p.createEmptyMovieClip("vol", 30);
-    v._y = y;
-    var vi = icon(v, "ic", 2, 8, 4, cfg.muted == "1" ? "mute" : "volume", false);
-    label(v, "sh", 3, 84, 2, 200, 40, "Volume", 32, 0xC86400, false);
-    label(v, "t", 4, 82, 0, 200, 40, "Volume", 32, 0xFFFFFF, false);
-    var pct = label(v, "pct", 5, 236, 12, 80, 22, "", 16, 0x7A3A00, false, "right");
-    var TX = 84, TY = 46, TW = 226;
+    v._x = LW + 8; v._y = 82;
+    var vi = icon(v, "ic", 2, 0, 0, cfg.muted == "1" ? "mute" : "volume", true);
+    label(v, "t", 4, 40, 6, 120, 22, "Volume", 16, INK, false);
+    var pct = label(v, "pct", 5, 140, 6, 70, 22, "", 16, INK, false, "right");
+    var TX = 6, TY = 44, TW = 200;
     var tr = v.createEmptyMovieClip("tr", 6);
     box(tr, TX, TY, TW, 12, WHITE, INK, 2, 0);
     var fill = v.createEmptyMovieClip("fill", 7);
     var th = v.createEmptyMovieClip("th", 8);
-    box(th, -7, -6, 14, 24, ORANGE, INK, 2, 0);
+    box(th, -7, -6, 14, 24, C1, INK, 2, 0);
     th._y = TY;
     function place() {
         var n = Number(cfg.volume);
         th._x = TX + n / 100 * TW;
         fill.clear();
-        box(fill, TX + 2, TY + 2, Math.max(0, n / 100 * TW - 2), 8, cfg.muted == "1" ? 0xAAAAAA : ORANGE, 0, 0, 0);
+        box(fill, TX + 2, TY + 2, Math.max(0, n / 100 * TW - 2), 8, cfg.muted == "1" ? 0xAAAAAA : C2, 0, 0, 0);
         pct.text = cfg.muted == "1" ? "Mute" : cfg.volume + "%";
     }
     function setFromMouse() {
@@ -534,23 +850,20 @@ function openStart() {
     box(drag, TX - 10, TY - 10, TW + 20, 34, 0xFFFFFF, 0, 0, 0);
     drag._alpha = 0;
     drag.onPress = function () { setFromMouse(); v.onEnterFrame = function () { setFromMouse(); }; };
-    drag.onRelease = drag.onReleaseOutside = function () { v.onEnterFrame = null; saveCfg(); };
+    drag.onRelease = drag.onReleaseOutside = function () { delete v.onEnterFrame; saveCfg(); };
     drag.useHandCursor = false;
     vi.onRelease = function () {
         cfg.muted = cfg.muted == "1" ? "0" : "1";
         applyVolume();
         saveCfg();
-        var b = sysBitmap(cfg.muted == "1" ? "icon_mute.png" : "icon_volume.png");
+        var b = sysBitmap(cfg.muted == "1" ? "icon_mute_s.png" : "icon_volume_s.png");
         if (b) this.attachBitmap(b, 1, "auto", true);
         place();
     };
-    y += 76;
-    var rs = menuRow(p, "rs", 40, y, 72, "restart", "Restart", function () { closeMenu(); FlashOS.restart(); });
-    y += 72;
-    var sd = menuRow(p, "sd", 41, y, 72, "power", "Shut Down", function () { closeMenu(); FlashOS.shutdown(); });
-    y += 78;
-    g.clear();
-    box(g, 0, 0, pw, y, MENU, 0, 0, 0);
+    var y = 160;
+    menuRow(p, "lo", 40, LW + 4, y, RW - 8, rowH, "about", "Log Off", function () { closeMenu(); showLogin(); }, INK);
+    menuRow(p, "rs", 41, LW + 4, y + rowH, RW - 8, rowH, "restart", "Restart", function () { closeMenu(); FlashOS.restart(); }, INK);
+    menuRow(p, "sd", 42, LW + 4, y + rowH * 2, RW - 8, rowH, "power", "Shut Down", function () { closeMenu(); FlashOS.shutdown(); }, INK);
 }
 
 // ---------------------------------------------------------------- cursor
@@ -572,13 +885,27 @@ function applyCursor() {
     var c = CURSOR_COLS[cfg.cursor] ? CURSOR_COLS[cfg.cursor] : CURSOR_COLS.white;
     if (FlashOS.cursorColor) FlashOS.cursorColor(c[0], c[1]);   // the pointer of SWFs played in a window
 }
-var mouseL = {};
-mouseL.onMouseMove = function () { cursorClip._x = _root._xmouse; cursorClip._y = _root._ymouse; };
+var mouseL = {}, idle = 0;
+mouseL.onMouseMove = function () { cursorClip._x = _root._xmouse; cursorClip._y = _root._ymouse; idle = getTimer(); };
+mouseL.onMouseDown = function () {
+    idle = getTimer();
+    if (menuOpen || calOpen || dialogLayer.panel || loginOn || saverOn) return;
+    var mx = _root._xmouse, my = _root._ymouse, best = null;
+    if (my < TOP_H || my > H - DOCK_H + 6) return;     // the taskbar and the dock
+    for (var i = 0; i < winOrder.length; i++) {
+        var w = winOrder[i];
+        if (w._visible && mx >= w._x - 2 && mx < w._x + w.ow + 2 && my >= w._y - 2 && my < w._y + w.oh + 2)
+            if (!best || w.getDepth() > best.getDepth()) best = w;
+    }
+    if (best && best != curApp) focusWin(best);
+};
 Mouse.addListener(mouseL);
 
 // ---------------------------------------------------------------- running SWFs (one at a time, in a window)
 function runSWF(name, back) {
-    FlashOS.runSWF(name, back, C1);
+    if (winOrder.length == 0) { FlashOS.runSWF(name, back == "" ? "desk" : back, C1); return; }
+    ask("Play " + name + "?", name + " plays in its own window. ByroTT closes its windows meanwhile (save your work first).",
+        ["Play", "Cancel"], function (k) { if (k == 0) FlashOS.runSWF(name, back == "" ? "desk" : back, C1); });
 }
 
 // ================================================================ TERMINAL
@@ -590,15 +917,15 @@ function tprint(s) {
     if (termOut) { termOut.text = termLines.join("\n"); termOut.scroll = termOut.maxscroll; }
 }
 function openTerminal(msg) {
-    var w = makeWindow("term", "Command Runner", 900, 600, true, function () { termOut = null; termIn = null; });
+    var w = makeWindow("term", "Command Runner", 860, 560, true, function () { termOut = null; termIn = null; });
     if (!w) return;
     var b = w.body;
     if (termLines.length == 0) { termLines.push("Digit An Command For Run Program"); termLines.push("Or Insert an Flash-disk"); termLines.push("(type HELP for the commands)"); termLines.push(""); }
-    termOut = label(b, "out", 1, 0, 0, 900, 560, "", 16, 0xFFFFFF, false, "left", MONO);
+    termOut = label(b, "out", 1, 0, 0, 860, 520, "", 16, 0xFFFFFF, false, "left", MONO);
     termOut.multiline = true;
     termOut.wordWrap = true;
-    label(b, "pr", 2, 0, 574, 50, 22, "dev/", 16, 0xFFFFFF, false, "left", MONO);
-    termIn = b.createTextField("in", 3, 32, 574, 866, 22);
+    label(b, "pr", 2, 0, 534, 50, 22, "dev/", 16, 0xFFFFFF, false, "left", MONO);
+    termIn = b.createTextField("in", 3, 32, 534, 826, 22);
     termIn = b["in"];
     termIn.embedFonts = true;
     termIn.type = "input";
@@ -616,6 +943,10 @@ function findFile(n) {
     var all = FlashOS.files(""), low = n.toLowerCase();
     for (var i = 0; i < all.length; i++) if (all[i].name.toLowerCase() == low) return all[i];
     for (i = 0; i < all.length; i++) if (all[i].name.toLowerCase() == low + ".swf") return all[i];
+    for (i = 0; i < all.length; i++) {                 // "note" finds note.txt
+        var nm = all[i].name.toLowerCase(), d = nm.lastIndexOf(".");
+        if (d > 0 && nm.substr(0, d) == low) return all[i];
+    }
     return null;
 }
 function termCommand(line) {
@@ -623,12 +954,26 @@ function termCommand(line) {
     var sp = line.indexOf(" ");
     var cmd = (sp < 0 ? line : line.substr(0, sp)).toLowerCase(), arg = sp < 0 ? "" : line.substr(sp + 1);
     if (cmd == "") return;
-    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, PAINT, SETTINGS, BALL   open an app\n  PRINT <file or text>   print on the printer (LPT1)\n  THEME <default|orange|green|blue|byrott>   window theme\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
+    if (APPDEF[cmd] && cmd != "viewer") {              // an app by its name: FILES, SNAKE, MUSIC...
+        var ins = installedApps(), ok = false;
+        for (var q = 0; q < ins.length; q++) if (ins[q] == cmd) ok = true;
+        if (ok) launch(cmd); else tprint("  " + APPDEF[cmd][0] + " is in More Apps (type STORE).");
+        return;
+    }
+    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, WEB, NOTEPAD, PAINT, MUSIC, STORE, SETTINGS, BALL, BIN...   open an app\n  PRINT <file or text>   print on the printer (LPT1)\n  DEL <file>    move a file to the Recycle Bin\n  THEME <default|orange|green|blue|byrott>   window theme\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
     else if (cmd == "files") openFiles();
     else if (cmd == "internet" || cmd == "web") openWeb();
     else if (cmd == "notepad") openNotepad(null);
     else if (cmd == "settings") openSettings("");
-    else if (cmd == "ball") launch("ball");
+    else if (cmd == "ball" || cmd == "ballgame") launch("ball");
+    else if (cmd == "music") launch("music");
+    else if (cmd == "del" || cmd == "delete") {        // DEL <file>: to the Recycle Bin
+        var df = findFile(arg);
+        if (!df) tprint("  File not found: " + arg);
+        else if (df.where != "disk" && df.where != "memory") tprint("  Only files on the hard disk can be deleted.");
+        else if (toBin(df.name)) tprint("  " + df.name + " is in the Recycle Bin."); else tprint("  Could not delete " + df.name + ".");
+    }
+    else if (cmd == "store") launch("store");
     else if (cmd == "paint") openPaint(null);
     else if (cmd == "print") {                 // PRINT <file>, or PRINT <some text>
         var pf = findFile(arg), txt = pf ? FlashOS.read(pf.name) : arg;
@@ -654,7 +999,7 @@ function termCommand(line) {
     } else if (cmd == "cls" || cmd == "clear") { termLines = []; tprint(""); }
     else if (cmd == "mem") tprint("  " + Math.round(FlashOS.memoryKB() / 1024) + " MB free for apps.");
     else if (cmd == "date" || cmd == "time") { var d = new Date(); tprint("  " + DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + "  " + two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds())); }
-    else if (cmd == "about" || cmd == "ver") tprint("  ByroTT 2.0 on FlashOS " + FlashOS.version + " (ByroTT edition).\n  Files are saved on the " + (FlashOS.storage() == "disk" ? "hard disk." : "memory (not installed)."));
+    else if (cmd == "about" || cmd == "ver") tprint("  ByroTT 3.0 on FlashOS " + FlashOS.version + " (ByroTT edition).\n  Files are saved on the " + (FlashOS.storage() == "disk" ? "hard disk." : "memory (not installed)."));
     else if (cmd == "exit") closeWindow(wins["term"]);
     else if (cmd == "open") { var f = findFile(arg); if (f) openFile(f.name); else tprint("  File not found: " + arg); }
     else if (cmd == "run" || cmd == "play") termRun(arg);
@@ -669,7 +1014,7 @@ function termRun(name) {
         return;
     }
     tprint("  Loading " + f.name + " ...");
-    FlashOS.runSWF(f.name, "terminal|" + f.name, C1);
+    runSWF(f.name, "terminal|" + f.name);
 }
 
 // ================================================================ NOTEPAD
@@ -677,7 +1022,7 @@ var noteName = "", noteTF = null, noteDirty = false;
 function openNotepad(file) {
     var w = wins["notepad"];
     if (!w) {
-        w = makeWindow("notepad", "Notepad", 940, 620, false, function () { noteTF = null; });
+        w = makeWindow("notepad", "Notepad", 900, 560, false, function () { noteTF = null; });
         var b = w.body;
         button(b, "new", 1, 0, 8, 80, 34, "New", function () { noteTF.text = ""; noteName = ""; noteDirty = false; noteTitle(); }, 0, 15);
         button(b, "open", 5, 86, 8, 90, 34, "Open...", function () {
@@ -686,7 +1031,7 @@ function openNotepad(file) {
         button(b, "save", 2, 182, 8, 80, 34, "Save", function () { noteSave(false); }, 1, 15);
         button(b, "saveas", 3, 268, 8, 110, 34, "Save as...", function () { noteSave(true); }, 0, 15);
         button(b, "print", 6, 384, 8, 80, 34, "Print", function () { notePrint(); }, 0, 15);
-        b.createTextField("txt", 4, 0, 52, 940, 568);
+        b.createTextField("txt", 4, 0, 52, 900, 508);
         noteTF = b.txt;
         noteTF.embedFonts = true;
         noteTF.type = "input";
@@ -817,7 +1162,7 @@ var PAINT_COLS = [0x000000, 0x808080, 0xC0C0C0, 0xFFFFFF, 0x800000, 0xFF0000, 0x
                   0x008000, 0x22EE66, 0x008080, 0xB4FFFF, 0x000080, 0x1E7BFF, 0x800080, 0xFF6EC7];
 var PAINT_TOOLS = [["pencil", "Pencil"], ["brush", "Brush"], ["eraser", "Eraser"], ["line", "Line"], ["box", "Box"], ["fill", "Fill"]];
 function openPaint(file) {
-    var w = makeWindow("paint", "Paint", 940, 620, false, null);
+    var w = makeWindow("paint", "Paint", 940, 572, false, null);
     if (!w) return;
     if (!paintBmp) {
         paintBmp = new flash.display.BitmapData(PW_, PH_, false, 0xFFFFFF);
@@ -839,7 +1184,7 @@ function openPaint(file) {
     }, 0, 16);
     // left: tools, sizes, colours
     var side = b.createEmptyMovieClip("side", 7);
-    box(side, 0, 0, 130, 600, LIGHT, INK, 2, 0);
+    box(side, 0, 0, 130, 572, LIGHT, INK, 2, 0);
     w.tools = [];
     for (var i = 0; i < PAINT_TOOLS.length; i++) {
         var t = button(b, "t" + i, 10 + i, 6, 6 + i * 38, 118, 34, PAINT_TOOLS[i][1], null, 2, 16);
@@ -965,7 +1310,7 @@ function paintSave(askName, then) {
 var vid = null;
 function openViewer(file) {
     if (wins["viewer"]) closeWindow(wins["viewer"]);
-    var w = makeWindow("viewer", file, 820, 620, true, function () { if (vid) { vid.close(); vid = null; } });
+    var w = makeWindow("viewer", file, 820, 590, true, function () { if (vid) { vid.close(); vid = null; } });
     var b = w.body;
     var low = file.toLowerCase();
     var pic = b.createEmptyMovieClip("pic", 1);
@@ -1003,6 +1348,7 @@ function openFile(n) {
     if (e == "swf") runSWF(n, "files");
     else if (e == "txt" || e == "log" || e == "md" || e == "cfg" || e == "csv" || e == "ini") openNotepad(n);
     else if (e == "jpg" || e == "jpeg" || e == "png" || e == "gif" || e == "bmp" || e == "flv") openViewer(n);
+    else if (e == "mp3") openMusic(n);
     else if (e == "htm" || e == "html") { openWeb(); webShowHtml(FlashOS.read(n), n); }
     else message("Files", "ByroTT has no app for ." + e + " files.");
 }
@@ -1123,44 +1469,87 @@ function filesNote(w, text) {
     t._y = Math.round(280 - text.split("\n").length * 17);
     c.onRelease = function () { filesHome(w); };
 }
+var filesDir = "";        // the folder open on the hard disk ("" = the top), ends with "/"
 function filesBuildList(w) {
     var b = w.body;
     var side = b.createEmptyMovieClip("side", 1);
-    box(side, 0, 0, 190, 540, LIGHT, INK, 2, 0);
+    box(side, 0, 0, 190, 580, LIGHT, INK, 2, 0);
     w.places = [];
     for (var i = 0; i < PLACES.length; i++) {
         var pb = button(b, "p" + i, 10 + i, 8, 12 + i * 44, 174, 40, PLACES[i][1], null, 2, 15);
         pb.place = PLACES[i][0];
-        pb.onRelease = function () { filesPlace = this.place; filesSel = -1; filesFirst = 0; filesReload(); };
+        pb.onRelease = function () { filesPlace = this.place; filesDir = ""; filesSel = -1; filesFirst = 0; filesReload(); };
         w.places.push(pb);
     }
-    var y = 488;
-    button(b, "back", 29, 8, y, 174, 38, "< Back", function () { closeWindow(w); openFiles(); }, 0, 16);
-    button(b, "open", 30, 206, y, 100, 38, "Open", function () { if (filesSel >= 0) openFile(filesList[filesSel].name); }, 1, 15);
-    button(b, "copy", 31, 312, y, 160, 38, "Copy to disk", function () { filesCopy(); }, 0, 15);
-    button(b, "del", 32, 478, y, 100, 38, "Delete", function () { filesDelete(); }, 0, 15);
-    button(b, "prv", 36, 584, y, 120, 38, "Make private", function () { filesMakePrivate(); }, 0, 15);
-    button(b, "up", 33, 760, y, 50, 38, "^", function () { if (filesFirst > 0) { filesFirst -= 10; if (filesFirst < 0) filesFirst = 0; filesDraw(); } }, 0, 16);
-    button(b, "dn", 34, 816, y, 50, 38, "v", function () { if (filesFirst + 10 < filesList.length) { filesFirst += 10; filesDraw(); } }, 0, 15);
-    w.info = label(b, "info", 35, 600, y + 44, 266, 24, "", 13, GREY, false, "right");
+    button(b, "back", 29, 8, 532, 174, 38, "< Back", function () { closeWindow(w); openFiles(); }, 0, 16);
+    // where we are, and Up for folders
+    w.path = label(b, "path", 26, 204, 10, 560, 22, "", 16, INK, false);
+    button(b, "updir", 27, 776, 2, 96, 34, "Up", function () { filesUp(); }, 0, 16);
+    var y = 482;
+    button(b, "open", 30, 200, y, 90, 38, "Open", function () { filesOpenSel(); }, 1, 15);
+    button(b, "copy", 31, 294, y, 130, 38, "Copy to disk", function () { filesCopy(); }, 0, 15);
+    button(b, "del", 32, 428, y, 90, 38, "Delete", function () { filesDelete(); }, 0, 15);
+    button(b, "prv", 36, 522, y, 124, 38, "Make private", function () { filesMakePrivate(); }, 0, 15);
+    button(b, "mv", 37, 650, y, 110, 38, "Move to...", function () { filesMove(); }, 0, 15);
+    button(b, "nf", 38, 200, y + 46, 124, 38, "New folder", function () { filesNewFolder(); }, 0, 15);
+    button(b, "dsk", 39, 328, y + 46, 150, 38, "Add to desktop", function () {
+        if (filesSel < 0) { message("Files", "Pick a file first."); return; }
+        var f = filesList[filesSel];
+        if (f.folder) { message("Files", "Folders cannot go on the desktop, only files."); return; }
+        if (deskAdd("file", f.name)) message("Files", f.name + " is on the desktop now."); else message("Files", f.name + " is already on the desktop.");
+    }, 0, 15);
+    button(b, "up", 33, 766, y, 50, 38, "^", function () { if (filesFirst > 0) { filesFirst -= 9; if (filesFirst < 0) filesFirst = 0; filesDraw(); } }, 0, 16);
+    button(b, "dn", 34, 822, y, 50, 38, "v", function () { if (filesFirst + 9 < filesList.length) { filesFirst += 9; filesDraw(); } }, 0, 15);
+    w.info = label(b, "info", 35, 600, y + 56, 272, 24, "", 13, GREY, false, "right");
     var head = b.createEmptyMovieClip("head", 40);
-    box(head, 200, 8, 668, 30, LIGHT, INK, 2, 0);
-    label(b, "h1", 41, 250, 12, 300, 24, "Name", 14, GREY, true);
-    label(b, "h2", 42, 600, 12, 100, 24, "Size", 14, GREY, true, "right");
-    label(b, "h3", 43, 730, 12, 120, 24, "Where", 14, GREY, true);
+    box(head, 200, 40, 672, 30, LIGHT, INK, 2, 0);
+    label(b, "h1", 41, 250, 44, 300, 24, "Name", 14, GREY, true);
+    label(b, "h2", 42, 600, 44, 100, 24, "Size", 14, GREY, true, "right");
+    label(b, "h3", 43, 730, 44, 120, 24, "Where", 14, GREY, true);
     filesReload();
 }
+function base(n) { var k = n.lastIndexOf("/"); return k >= 0 ? n.substr(k + 1) : n; }
 function filesReload() {
     var all = FlashOS.files("");
     filesList = [];
+    var folders = {}, fl = [];
     for (var i = 0; i < all.length; i++) {
-        var wh = all[i].where == "memory" ? "disk" : all[i].where;
-        if ((filesPlace == "all" || wh == filesPlace) && !hiddenFile(all[i])) filesList.push(all[i]);
+        var f = all[i], wh = f.where == "memory" ? "disk" : f.where;
+        if (f.name.indexOf("~bin/") == 0 || f.name.indexOf(PRIV) == 0) continue;
+        if (filesPlace == "disk" && wh == "disk") {
+            // only what is in the open folder; folders inside it show once
+            if (f.name.indexOf(filesDir) != 0) continue;
+            var rest = f.name.substr(filesDir.length), k = rest.indexOf("/");
+            if (k >= 0) {
+                var fn = rest.substr(0, k);
+                if (!folders[fn]) { folders[fn] = true; fl.push({name: filesDir + fn + "/", label: fn, folder: true, where: "disk", size: 0}); }
+                continue;
+            }
+            if (!hiddenFile(f)) filesList.push({name: f.name, label: rest, where: f.where, size: f.size});
+        } else if ((filesPlace == "all" || wh == filesPlace) && !hiddenFile(f)) filesList.push({name: f.name, label: f.name, where: f.where, size: f.size});
     }
+    filesList = fl.concat(filesList);
     var w = wins["files"];
     if (!w) return;
-    for (var k = 0; k < w.places.length; k++) w.places[k].setOn(w.places[k].place == filesPlace);
+    for (var k2 = 0; k2 < w.places.length; k2++) w.places[k2].setOn(w.places[k2].place == filesPlace);
+    var pn = "";
+    for (k2 = 0; k2 < PLACES.length; k2++) if (PLACES[k2][0] == filesPlace) pn = PLACES[k2][1];
+    w.path.text = pn + (filesPlace == "disk" ? " / " + filesDir.split("/").join(" / ") : "");
+    w.body.updir._visible = filesPlace == "disk" && filesDir != "";
     filesDraw();
+}
+function filesUp() {
+    if (filesDir == "") return;
+    var p = filesDir.substr(0, filesDir.length - 1), k = p.lastIndexOf("/");
+    filesDir = k >= 0 ? p.substr(0, k + 1) : "";
+    filesSel = -1; filesFirst = 0;
+    filesReload();
+}
+function filesOpenSel() {
+    if (filesSel < 0) return;
+    var f = filesList[filesSel];
+    if (f.folder) { filesDir = f.name; filesSel = -1; filesFirst = 0; filesReload(); }
+    else openFile(f.name);
 }
 function kb(n) { if (n < 1024) return n + " B"; if (n < 1048576) return Math.round(n / 1024) + " KB"; return Math.round(n / 104857.6) / 10 + " MB"; }
 var WHERE = {disk: "Hard disk", memory: "Memory", cd: "CD", usb: "USB", system: "ByroTT", net: "Download"};
@@ -1170,26 +1559,30 @@ function fileKind(n) {
     if (e == "txt" || e == "log" || e == "md" || e == "cfg" || e == "ini" || e == "csv") return "txt";
     if (e == "jpg" || e == "jpeg" || e == "png" || e == "gif" || e == "bmp") return "img";
     if (e == "flv") return "video";
+    if (e == "mp3") return "music";
     if (e == "iso") return "disc";
     return "file";
 }
-// the pictures ByroTT itself is drawn with are not shown as files
-// files the lists do not show: ByroTT's pictures, its own settings, private files
-function hiddenFile(f) { return (f.where == "system" && isSystemArt(f.name)) || f.name.indexOf("byrott.") == 0 || f.name.indexOf(PRIV) == 0 || f.name == "ballgame.hi"; }
+// files the lists do not show: ByroTT's pictures and settings, private files,
+// folder markers, the Recycle Bin, the Store's copies
+function hiddenFile(f) {
+    var n = f.name;
+    return (f.where == "system" && isSystemArt(n)) || n.indexOf("byrott.") == 0 || n.indexOf(PRIV) == 0 || n.indexOf("~bin/") == 0 ||
+           n.lastIndexOf("/.folder") == n.length - 8 && n.length >= 8 || n == "ballgame.hi";
+}
 var PRIV = "private_";
-function isSystemArt(n) { return n.indexOf("icon_") == 0 || n.indexOf("logo_") == 0 || n == "start_btn.png" || n == "web_offline.png"; }
+function isSystemArt(n) { return n.indexOf("icon_") == 0 || n.indexOf("logo_") == 0 || n.indexOf("avatar_") == 0 || n.indexOf("store_") == 0 || n == "start_btn.png" || n == "web_offline.png"; }
 function filesDraw() {
     var w = wins["files"];
     if (!w) return;
     var b = w.body;
-    for (var r = 0; r < 10; r++) {
+    for (var r = 0; r < 9; r++) {
         var i = filesFirst + r;
         var row = b["r" + r];
         if (!row) {
             row = b.createEmptyMovieClip("r" + r, 50 + r);
-            row._x = 200; row._y = 44 + r * 44;
+            row._x = 200; row._y = 74 + r * 44;
             row.bg = row.createEmptyMovieClip("bg", 1);
-            row.ic = null;
             row.n = label(row, "n", 3, 50, 9, 330, 26, "", 16, INK, false);
             row.s = label(row, "s", 4, 380, 10, 120, 24, "", 14, GREY, false, "right");
             row.wh = label(row, "wh", 5, 530, 10, 130, 24, "", 14, GREY, false);
@@ -1198,7 +1591,7 @@ function filesDraw() {
             row.onRelease = function () {
                 var k = filesFirst + this.r;
                 if (k >= filesList.length) return;
-                if (k == filesSel && getTimer() - this.last < 500) { openFile(filesList[k].name); return; }
+                if (k == filesSel && getTimer() - this.last < 500) { filesOpenSel(); return; }
                 filesSel = k;
                 this.last = getTimer();
                 filesDraw();
@@ -1207,62 +1600,194 @@ function filesDraw() {
         row.bg.clear();
         if (i < filesList.length) {
             var f = filesList[i];
-            box(row.bg, 0, 0, 668, 42, i == filesSel ? C3 : (r % 2 ? 0xEDEDED : 0xF7F7F7), i == filesSel ? C1 : 0, i == filesSel ? 2 : 0, 0);
-            icon(row, "ic", 2, 10, 5, fileKind(f.name), true);
-            row.n.text = f.name;
-            row.s.text = kb(f.size);
+            box(row.bg, 0, 0, 672, 42, i == filesSel ? C3 : (r % 2 ? 0xEDEDED : 0xF7F7F7), i == filesSel ? INK : 0, i == filesSel ? 2 : 0, 0);
+            icon(row, "ic", 2, 10, 5, f.folder ? "files" : fileKind(f.name), true);
+            row.n.text = f.label;
+            row.s.text = f.folder ? "folder" : kb(f.size);
             row.wh.text = WHERE[f.where] ? WHERE[f.where] : f.where;
             row._visible = true;
         } else row._visible = false;
     }
-    w.info.text = filesList.length + (filesList.length == 1 ? " file" : " files");
+    w.info.text = filesList.length + (filesList.length == 1 ? " item" : " items");
 }
+function onDisk(f) { return f.where == "disk" || f.where == "memory"; }
 function filesCopy() {
     if (filesSel < 0) { message("Files", "Pick a file first."); return; }
     var f = filesList[filesSel];
-    if (f.where == "disk" || f.where == "memory") { message("Files", f.name + " is already on the hard disk."); return; }
-    if (FlashOS.copyFile(f.name, f.name)) { message("Files", f.name + " was copied to the hard disk."); filesReload(); }
+    if (f.folder || onDisk(f)) { message("Files", f.label + " is already on the hard disk."); return; }
+    if (FlashOS.copyFile(f.name, base(f.name))) { message("Files", f.name + " was copied to the hard disk."); filesReload(); }
     else message("Files", "Sorry, " + f.name + " could not be copied. The disk may be full.");
+}
+function moveFile(from, to) {
+    if (from == to) return true;
+    if (!FlashOS.copyFile(from, to)) return false;
+    FlashOS.remove(from);
+    for (var i = 0; i < desk.length; i++) if (desk[i].kind == "file" && desk[i].target == from) { desk[i].target = to; deskSave(); buildIcons(); }
+    return true;
 }
 function filesMakePrivate() {
     if (filesSel < 0) { message("Files", "Pick a file first."); return; }
     var f = filesList[filesSel];
-    if (f.where != "disk" && f.where != "memory") { message("Files", "Only files on the hard disk can go in the Private Folder."); return; }
-    if (!FlashOS.copyFile(f.name, PRIV + f.name)) { message("Files", "Sorry, " + f.name + " could not be moved."); return; }
-    FlashOS.remove(f.name);
+    if (f.folder || !onDisk(f)) { message("Files", "Only files on the hard disk can go in the Private Folder."); return; }
+    if (!moveFile(f.name, PRIV + base(f.name))) { message("Files", "Sorry, " + f.name + " could not be moved."); return; }
     filesSel = -1;
     filesReload();
-    message("Files", f.name + " is now in Admin > Private Folder." + (cfg.pass == "" ? "\nTip: set an Admin Password in Settings." : ""));
+    message("Files", base(f.name) + " is now in Admin > Private Folder." + (cfg.pass == "" ? "\nTip: set an Admin Password in Settings." : ""));
+}
+function filesNewFolder() {
+    if (filesPlace != "disk") { filesPlace = "disk"; filesDir = ""; }
+    prompt("New folder", "Name of the new folder:", "New folder", function (n) {
+        n = n.split("/").join("-");
+        if (n == "") return;
+        FlashOS.write(filesDir + n + "/.folder", "");
+        filesReload();
+    });
+}
+function filesMove() {
+    if (filesSel < 0) { message("Files", "Pick a file first."); return; }
+    var f = filesList[filesSel];
+    if (f.folder || !onDisk(f)) { message("Files", "Only files on the hard disk can be moved."); return; }
+    prompt("Move " + base(f.name), "To which folder? (for example Games or Games/Old;\nempty = the top of the hard disk)", "", function (d) {
+        while (d.charAt(d.length - 1) == "/") d = d.substr(0, d.length - 1);
+        var to = (d == "" ? "" : d + "/") + base(f.name);
+        if (d != "") FlashOS.write(d + "/.folder", "");
+        if (!moveFile(f.name, to)) message("Files", "Sorry, the file could not be moved.");
+        filesSel = -1;
+        filesReload();
+    });
 }
 function filesDelete() {
     if (filesSel < 0) { message("Files", "Pick a file first."); return; }
     var f = filesList[filesSel];
-    if (f.where != "disk" && f.where != "memory") { message("Files", "Only files on the hard disk can be deleted. " + f.name + " is on the " + (WHERE[f.where] ? WHERE[f.where] : f.where) + "."); return; }
-    ask("Delete " + f.name + "?", "Do you really want to delete " + f.name + "? This cannot be undone.", ["Delete", "Cancel"], function (k) {
-        if (k == 0) { FlashOS.remove(f.name); filesSel = -1; filesReload(); }
-    }, true);
+    if (!f.folder && !onDisk(f)) { message("Files", "Only files on the hard disk can be deleted. " + f.name + " is on the " + (WHERE[f.where] ? WHERE[f.where] : f.where) + "."); return; }
+    var what = f.folder ? "the folder " + f.label + " and everything in it" : f.label;
+    ask("Delete", "Move " + what + " to the Recycle Bin?", ["Yes", "No"], function (k) {
+        if (k != 0) return;
+        if (f.folder) {
+            var all = FlashOS.files("");
+            for (var i = 0; i < all.length; i++)
+                if (all[i].name.indexOf(f.name) == 0) { if (base(all[i].name) == ".folder") FlashOS.remove(all[i].name); else toBin(all[i].name); }
+        } else toBin(f.name);
+        filesSel = -1;
+        filesReload();
+    });
+}
+
+// ================================================================ RECYCLE BIN
+// deleted files wait in "~bin/"; byrott.bin remembers where they came from
+function binIndex() { var l = listLoad("byrott.bin"); return l == null ? [] : l; }
+function binCount() { var n = 0, all = FlashOS.files(""); for (var i = 0; i < all.length; i++) if (all[i].name.indexOf("~bin/") == 0) n++; return n; }
+function toBin(name) {
+    var b = "~bin/" + base(name), k = 2;
+    while (FlashOS.exists(b)) b = "~bin/" + (k++) + "-" + base(name);
+    if (!moveFile(name, b)) return false;
+    var l = binIndex();
+    l.push([b, name]);
+    listSave("byrott.bin", l);
+    deskRemove("file", b);
+    binChanged();
+    return true;
+}
+function binChanged() { buildIcons(); paintDock(); if (wins["bin"]) binDraw(); }
+var binSel = -1;
+function openBin() {
+    var w = makeWindow("bin", "Recycle Bin", 700, 480, false, null);
+    if (!w) return;
+    var b = w.body;
+    var head = b.createEmptyMovieClip("head", 1);
+    box(head, 0, 0, 700, 30, LIGHT, INK, 2, 0);
+    label(b, "h1", 2, 50, 4, 300, 22, "Name", 16, GREY, false);
+    label(b, "h2", 3, 360, 4, 300, 22, "Was in", 16, GREY, false);
+    button(b, "rs", 4, 0, 436, 140, 40, "Restore", function () { binRestore(); }, 1, 16);
+    button(b, "dl", 5, 146, 436, 180, 40, "Delete for ever", function () { binDelete(false); }, 0, 16);
+    button(b, "em", 6, 500, 436, 200, 40, "Empty Recycle Bin", function () { binDelete(true); }, 3, 16);
+    binSel = -1;
+    binDraw();
+}
+function binItems() {
+    var idx = binIndex(), all = FlashOS.files(""), out = [];
+    for (var i = 0; i < all.length; i++) {
+        var n = all[i].name;
+        if (n.indexOf("~bin/") != 0) continue;
+        var from = n.substr(5);
+        for (var k = 0; k < idx.length; k++) if (idx[k][0] == n) from = idx[k][1];
+        out.push([n, from]);
+    }
+    return out;
+}
+function binDraw() {
+    var w = wins["bin"];
+    if (!w) return;
+    var c = w.body.createEmptyMovieClip("list", 20), items = binItems();
+    if (items.length == 0) label(c, "e", 1, 0, 160, 700, 40, "The Recycle Bin is empty.", 32, GREY, false, "center");
+    for (var i = 0; i < items.length && i < 9; i++) {
+        var r = c.createEmptyMovieClip("r" + i, 10 + i);
+        r._y = 34 + i * 44;
+        box(r, 0, 0, 700, 42, i == binSel ? C3 : (i % 2 ? 0xEDEDED : 0xF7F7F7), i == binSel ? INK : 0, i == binSel ? 2 : 0, 0);
+        icon(r, "ic", 1, 10, 5, fileKind(items[i][0]), true);
+        label(r, "n", 2, 50, 11, 300, 22, base(items[i][1]), 16, INK, false);
+        var wasIn = items[i][1].lastIndexOf("/") >= 0 ? items[i][1].substr(0, items[i][1].lastIndexOf("/")) : "Hard disk";
+        label(r, "w", 3, 360, 11, 330, 22, wasIn, 16, GREY, false);
+        r.k = i;
+        r.onRelease = function () { binSel = this.k; binDraw(); };
+    }
+}
+function binRestore() {
+    var items = binItems();
+    if (binSel < 0 || binSel >= items.length) { message("Recycle Bin", "Pick a file first."); return; }
+    var it = items[binSel], to = it[1];
+    while (FlashOS.exists(to)) to = "restored-" + to;
+    if (to.lastIndexOf("/") >= 0) FlashOS.write(to.substr(0, to.lastIndexOf("/")) + "/.folder", "");
+    if (!moveFile(it[0], to)) { message("Recycle Bin", "Sorry, it could not be restored."); return; }
+    var l = binIndex();
+    for (var k = 0; k < l.length; k++) if (l[k][0] == it[0]) { l.splice(k, 1); break; }
+    listSave("byrott.bin", l);
+    binSel = -1;
+    binChanged();
+    if (wins["files"]) filesReload();
+}
+function binDelete(all) {
+    var items = binItems();
+    if (!all && (binSel < 0 || binSel >= items.length)) { message("Recycle Bin", "Pick a file first."); return; }
+    if (all && items.length == 0) return;
+    ask("Recycle Bin", all ? "Delete all " + items.length + " files for ever?" : "Delete " + base(items[binSel][1]) + " for ever?", ["Yes", "No"], function (k) {
+        if (k != 0) return;
+        var l = binIndex();
+        for (var i = 0; i < items.length; i++) if (all || i == binSel) {
+            FlashOS.remove(items[i][0]);
+            for (var j = 0; j < l.length; j++) if (l[j][0] == items[i][0]) { l.splice(j, 1); break; }
+        }
+        listSave("byrott.bin", l);
+        binSel = -1;
+        binChanged();
+    });
 }
 
 // ================================================================ SETTINGS
 // like the mock-up: one list, click a row to change it
 function wallName(f) { var n = f.substr(0, f.lastIndexOf(".")); return n.substr(0, 1).toUpperCase() + n.substr(1); }
 function openSettings(pg) {
-    if (!wins["settings"]) makeWindow("settings", "System Settings", 760, 620, false, null);
+    if (!wins["settings"]) makeWindow("settings", "System Settings", 760, 600, false, null);
+    else focusWin(wins["settings"]);
     settingsPage("");
 }
 function setRow(c, name, depth, y, kind, text, onClick) {
+    // a big first line (like the mock-up) and a small second one
     var r = c.createEmptyMovieClip(name, depth);
     r._y = y;
     r.hl = r.createEmptyMovieClip("hl", 1);
-    var t = label(r, "t", 3, 82, 0, 660, 160, "", 32, INK, false);
-    t.multiline = true;
-    t.text = text;
-    var lines = text.split("\n").length;
-    var h = Math.max(72, lines * 34 + 8);
+    var lines = text.split("\n");
+    var h = Math.max(58, 40 + (lines.length - 1) * 18);
     box(r.hl, 0, 0, 760, h, C3, 0, 0, 0);
     r.hl._alpha = 0;
-    icon(r, "ic", 2, 6, Math.round((h - 64) / 2), kind, false);
-    t._y = Math.round((h - lines * 34) / 2) - 2;
+    var ic = icon(r, "ic", 2, 6, Math.round((h - 48) / 2), kind, false);
+    ic._xscale = ic._yscale = 75;
+    label(r, "t", 3, 66, 4, 680, 36, lines[0], 32, INK, false);
+    if (lines.length > 1) {
+        var t2 = label(r, "t2", 4, 68, 38, 680, 100, "", 16, GREY, false);
+        t2.multiline = true;
+        t2.text = lines.slice(1).join("\n");
+    }
     r.h = h;
     if (onClick) {
         r.onRollOver = function () { this.hl._alpha = 100; };
@@ -1272,28 +1797,26 @@ function setRow(c, name, depth, y, kind, text, onClick) {
     return r;
 }
 function nextOf(list, v) { for (var i = 0; i < list.length; i++) if (list[i] == v) return list[(i + 1) % list.length]; return list[0]; }
+var SAVERS = ["0", "1", "2", "5", "10"];
 function settingsPage(pg) {
     var w = wins["settings"];
     if (!w) return;
     var c = w.body.createEmptyMovieClip("page", 50);   // replaces the old page
-    var y = 0, r;
-    r = setRow(c, "cur", 1, y, "pointer", "Change Pointer Color\n(" + CURSOR_NAMES[cfg.cursor] + ")", function () {
-        cfg.cursor = nextOf(CURSORS, cfg.cursor); applyCursor(); saveCfg(); settingsPage("");
-    });
-    y += r.h + 4;
-    r = setRow(c, "thm", 2, y, "theme", "Change Windows Theme\n(" + THEMES[cfg.theme][2] + ")", function () {
-        cfg.theme = nextOf(THEME_NAMES, cfg.theme); applyColor(); saveCfg(); repaintWindows(); settingsPage("");
-    });
-    y += r.h + 4;
-    r = setRow(c, "wal", 3, y, "wall", "Change Wallpaper\n(" + wallName(cfg.wallpaper) + ")", function () {
-        setWallpaper(nextOf(systemWallpapers(), cfg.wallpaper)); saveCfg(); settingsPage("");
-    });
-    y += r.h + 4;
-    r = setRow(c, "pw", 6, y, "admin", "Admin Password\n(" + (cfg.pass == "" ? "Off" : "On") + ")", function () { setPassword(); });
-    y += r.h + 4;
-    r = setRow(c, "del", 4, y, "delete", "Delete Byrott", function () { uninstallNow(); });
-    y += r.h + 4;
-    r = setRow(c, "abt", 5, y, "about", "About Byrott 2.0\nByrott Is Not Affilated\nWith FlashOS At All\n(c) 2000 Byrott/FlashOS", null);
+    var y = 0, r, rows = [
+        ["cur", "pointer", "Change Pointer Color\n(" + CURSOR_NAMES[cfg.cursor] + ")", function () { cfg.cursor = nextOf(CURSORS, cfg.cursor); applyCursor(); saveCfg(); settingsPage(""); }],
+        ["thm", "theme", "Change Windows Theme\n(" + THEMES[cfg.theme][2] + ": windows, start menu and dock)", function () {
+            cfg.theme = nextOf(THEME_NAMES, cfg.theme); applyColor(); saveCfg(); repaintWindows(); paintTaskbar(); settingsPage(""); }],
+        ["wal", "wall", "Change Wallpaper\n(" + wallName(cfg.wallpaper) + ")", function () { setWallpaper(nextOf(systemWallpapers(), cfg.wallpaper)); saveCfg(); settingsPage(""); }],
+        ["usr", "about", "User Account\n(" + cfg.uname + ", password " + (cfg.upass == "" ? "off" : "on") + ")", function () { userDialog(); }],
+        ["svr", "wall", "Screensaver\n(" + (cfg.saver == "0" ? "Off" : "after " + cfg.saver + " minute" + (cfg.saver == "1" ? "" : "s")) + ")", function () { cfg.saver = nextOf(SAVERS, cfg.saver); saveCfg(); settingsPage(""); }],
+        ["dck", "store", "Dock\n(" + dockApps().length + " apps: click to add or remove)", function () { dockEdit(); }],
+        ["pw", "admin", "Admin Password\n(" + (cfg.pass == "" ? "Off" : "On") + ")", function () { setPassword(); }],
+        ["del", "delete", "Delete Byrott", function () { uninstallNow(); }],
+        ["abt", "about", "About Byrott 3.0\nByrott Is Not Affilated With FlashOS At All\n(c) 2000 Byrott/FlashOS", null]];
+    for (var i = 0; i < rows.length; i++) {
+        r = setRow(c, rows[i][0], i + 1, y, rows[i][1], rows[i][2], rows[i][3]);
+        y += r.h + 2;
+    }
 }
 function paintFrameColors(w) { w.paintBar(); }
 function setPassword() {
@@ -1329,7 +1852,7 @@ function uninstallNow() {
 }
 
 // ================================================================ INTERNET
-var WEB_W = 900, WEB_VIEW = 470;
+var WEB_W = 900, WEB_VIEW = 440;
 var START_PAGE = "<title>ByroTT start page</title><h1>Welcome to the Internet</h1>" +
 
     "<form action=\"http://frogfind.com/\"><p><b>Search the web with FrogFind:</b> <input name=\"q\"> <input type=\"submit\" value=\"Search\"></p></form>" +
@@ -1657,7 +2180,7 @@ function webShowHtml(html, url) {
     webUrl = url;
     webUrlF.text = url;
     var w = wins["web"];
-    w.titleTxt.text = (webTitle != "" ? ents(webTitle) : url) + " - Internet Navigator 2.0";
+    w.titleTxt.text = (webTitle != "" ? ents(webTitle) : url) + " - Internet Navigator 3.0";
     webRender();
     if (url.indexOf("http://") == 0) {
         webAddHistory(url, webTitle != "" ? ents(webTitle) : url);
@@ -1808,7 +2331,7 @@ function webOffline(why) {
 }
 function webScrollBy(d) { webScroll += d; webRender(); }
 function openWeb() {
-    var w = makeWindow("web", "Internet Navigator 2.0", WEB_W + 20, 620, false, function () { webPage = null; });
+    var w = makeWindow("web", "Internet Navigator 3.0", WEB_W + 20, 580, false, function () { webPage = null; });
     if (!w) return;
     var b = w.body;
     // the page (depth 5) scrolls under two white covers, so lines cut at the
@@ -1819,7 +2342,7 @@ function openWeb() {
     var pm = b.createEmptyMovieClip("pmask", 4);    // the page view, a mask for the page
     box(pm, 0, 56, WEB_W, WEB_VIEW, 0xFFFFFF, 0, 0, 0);
     var bot = b.createEmptyMovieClip("coverBot", 81);
-    box(bot, -8, 56 + WEB_VIEW, WEB_W + 36, 620 - WEB_VIEW - 48, WHITE, 0, 0, 0);
+    box(bot, -8, 56 + WEB_VIEW, WEB_W + 36, 600 - WEB_VIEW - 48, WHITE, 0, 0, 0);
     box(bot, 0, 56 + WEB_VIEW, WEB_W + 20, 1, EDGE, 0, 0, 0);
     button(b, "back", 82, 8, 8, 56, 34, "Back", function () { if (webHist.length) { var u = webHist.pop(); webUrl = ""; webGo(u); webHist.pop(); } }, 0, 15);
     button(b, "home", 83, 68, 8, 56, 34, "Home", function () { webGo("byrott:start"); }, 0, 15);
@@ -1845,9 +2368,9 @@ function openWeb() {
     };
     webThumb.onRelease = webThumb.onReleaseOutside = function () { delete bar.onEnterFrame; };
     webThumb.useHandCursor = false;
-    webStatus = label(b, "st", 90, 12, 542, 600, 24, "", 13, GREY, false);
-    button(b, "dn", 91, WEB_W - 76, 534, 86, 32, "Down", function () { webScrollBy(WEB_VIEW - 60); }, 0, 14);
-    button(b, "up", 92, WEB_W - 168, 534, 86, 32, "Up", function () { webScrollBy(-(WEB_VIEW - 60)); }, 0, 14);
+    webStatus = label(b, "st", 90, 12, 64 + WEB_VIEW + 8, 600, 24, "", 13, GREY, false);
+    button(b, "dn", 91, WEB_W - 76, 64 + WEB_VIEW, 86, 32, "Down", function () { webScrollBy(WEB_VIEW - 60); }, 0, 14);
+    button(b, "up", 92, WEB_W - 168, 64 + WEB_VIEW, 86, 32, "Up", function () { webScrollBy(-(WEB_VIEW - 60)); }, 0, 14);
     w.focusField = null;
     webHist = [];
     webUrl = "";
@@ -1856,10 +2379,849 @@ function openWeb() {
 // the mouse wheel scrolls web pages (and the Command Runner)
 var wheelL = {};
 wheelL.onMouseWheel = function (delta) {
-    if (webPage && wins["web"]) { webScrollBy(-delta * 16); return; }
-    if (termOut && wins["term"]) { termOut.scroll -= delta; }
+    idle = getTimer();
+    if (webPage && isFront("web")) { webScrollBy(-delta * 16); return; }
+    if (termOut && isFront("term")) { termOut.scroll -= delta; return; }
+    if (noteTF && isFront("notepad")) { noteTF.scroll -= delta; }
 };
 Mouse.addListener(wheelL);
+
+// ================================================================ MUSIC PLAYER
+// plays the MP3 files on the disk, CD and USB; keeps playing when you hide it
+var musicList = [], musicIdx = -1, musicFirst = 0, musicPaused = false;
+function mmss(t) { t = Math.floor(t); return Math.floor(t / 60) + ":" + two(t % 60); }
+function musicFiles() {
+    var all = FlashOS.files(""), out = [];
+    for (var i = 0; i < all.length; i++) if (ext(all[i].name) == "mp3" && !hiddenFile(all[i])) out.push(all[i].name);
+    return out;
+}
+function openMusic(file) {
+    var w = wins["music"];
+    if (!w) {
+        w = makeWindow("music", "Music Player", 600, 420, false, function () { FlashOS.musicStop(); musicIdx = -1; });
+        var b = w.body;
+        var top = b.createEmptyMovieClip("top", 1);
+        box(top, 0, 0, 600, 120, 0x101010, INK, 2, 0);
+        w.now = label(b, "now", 2, 14, 10, 572, 36, "No song", 32, 0x40FF60, false);
+        w.time = label(b, "time", 3, 14, 50, 300, 22, "0:00 / 0:00", 16, 0x40FF60, false);
+        var bar = b.createEmptyMovieClip("bar", 4);
+        bar._x = 14; bar._y = 84;
+        box(bar, 0, 0, 572, 18, 0x303030, 0x40FF60, 1, 0);
+        w.fill = bar.createEmptyMovieClip("fill", 1);
+        bar.onRelease = function () {           // click the bar to jump
+            var st = FlashOS.musicState();
+            if (st.len > 0) FlashOS.musicSeek(Math.round(this._xmouse / 572 * st.len));
+        };
+        button(b, "pv", 10, 0, 130, 80, 40, "|<", function () { musicGo(musicIdx - 1); }, 0, 16);
+        w.pp = button(b, "pp", 11, 86, 130, 120, 40, "Play", function () { musicPlayPause(); }, 1, 16);
+        button(b, "st", 12, 212, 130, 90, 40, "Stop", function () { FlashOS.musicStop(); musicPaused = false; w.pp.lab.text = "Play"; }, 0, 16);
+        button(b, "nx", 13, 308, 130, 80, 40, ">|", function () { musicGo(musicIdx + 1); }, 0, 16);
+        button(b, "up", 14, 480, 130, 50, 40, "^", function () { if (musicFirst > 0) { musicFirst -= 5; if (musicFirst < 0) musicFirst = 0; musicDraw(); } }, 0, 16);
+        button(b, "dn", 15, 536, 130, 50, 40, "v", function () { if (musicFirst + 5 < musicList.length) { musicFirst += 5; musicDraw(); } }, 0, 16);
+        var tick2 = 0;
+        b.onEnterFrame = function () {
+            if (++tick2 % 10) return;
+            var st = FlashOS.musicState();
+            w.time.text = mmss(st.pos) + " / " + mmss(st.len);
+            w.fill.clear();
+            if (st.len > 0) box(w.fill, 1, 1, Math.min(570, 570 * st.pos / st.len), 16, 0x40FF60, 0, 0, 0);
+            if (st.done && !st.playing && musicIdx >= 0 && !musicPaused) musicGo(musicIdx + 1 < musicList.length ? musicIdx + 1 : 0);
+        };
+    } else focusWin(w);
+    musicList = musicFiles();
+    musicDraw();
+    if (file) for (var i = 0; i < musicList.length; i++) if (musicList[i] == file) musicGo(i);
+}
+function musicGo(i) {
+    var w = wins["music"];
+    if (!w || musicList.length == 0) return;
+    if (i < 0) i = musicList.length - 1;
+    if (i >= musicList.length) i = 0;
+    var r = FlashOS.musicPlay(musicList[i]);
+    musicIdx = i;
+    musicPaused = false;
+    if (r != "ok") { w.now.text = "Cannot play: " + r; w.pp.lab.text = "Play"; }
+    else { var n = base(musicList[i]); w.now.text = n.substr(0, n.length - 4); w.pp.lab.text = "Pause"; }
+    musicDraw();
+}
+function musicPlayPause() {
+    var w = wins["music"], st = FlashOS.musicState();
+    if (musicIdx < 0 || (!st.playing && !musicPaused)) { musicGo(musicIdx < 0 ? 0 : musicIdx); return; }
+    musicPaused = !musicPaused;
+    FlashOS.musicPause(musicPaused);
+    w.pp.lab.text = musicPaused ? "Play" : "Pause";
+}
+function musicDraw() {
+    var w = wins["music"];
+    if (!w) return;
+    var c = w.body.createEmptyMovieClip("list", 20);
+    c._y = 180;
+    box(c, 0, 0, 600, 5 * 44 + 4, WHITE, INK, 2, 0);
+    if (musicList.length == 0) label(c, "e", 1, 0, 90, 600, 22, "No MP3 files. Put some on the disk, a CD or a USB stick.", 16, GREY, false, "center");
+    for (var r = 0; r < 5; r++) {
+        var i = musicFirst + r;
+        if (i >= musicList.length) break;
+        var row = c.createEmptyMovieClip("r" + r, 10 + r);
+        row._x = 2; row._y = 2 + r * 44;
+        box(row, 0, 0, 596, 44, i == musicIdx ? C3 : (r % 2 ? 0xF4F4F4 : WHITE), 0, 0, 0);
+        icon(row, "ic", 1, 8, 6, "music", true);
+        label(row, "n", 2, 48, 12, 540, 22, base(musicList[i]), 16, INK, false);
+        row.k = i;
+        row.onRelease = function () { musicGo(this.k); };
+    }
+}
+
+// ================================================================ MORE APPS (the store)
+// games and apps to get with one click; "Get from the web" downloads an SWF
+var STORE = [["snake", "Snake", "Eat the apples and grow; do not bite your tail!", "game"],
+             ["mines", "Minesweeper", "Open all the squares without stepping on a mine.", "game"],
+             ["solitaire", "Solitaire", "The card game: build the four piles from Ace to King.", "game"],
+             ["maze", "Maze 3D", "Find the way out of 3D mazes, level after level (SWF).", "swf", "store_maze.swf", "maze3d.swf"],
+             ["fnote", "Flash Notepad", "Texts, drawings, pictures and videos, in Comic style (SWF).", "swf", "store_flashnotepad.swf", "flashnotepad.swf"]];
+function storeHas(it) {
+    if (it[3] == "game") { var g = cfg.games.split(","); for (var i = 0; i < g.length; i++) if (g[i] == it[0]) return true; return false; }
+    return FlashOS.exists(it[5]);
+}
+function openStore() {
+    var w = makeWindow("store", "More Apps", 760, 590, false, null);
+    if (!w) return;
+    storeDraw();
+}
+function storeDraw() {
+    var w = wins["store"];
+    if (!w) return;
+    var c = w.body.createEmptyMovieClip("page", 10);
+    var hd = c.createEmptyMovieClip("hd", 1);
+    titleBar(hd, 0, 0, 760, 44);
+    label(c, "t", 2, 70, 6, 600, 36, "More Apps", 32, onC1(), false);
+    icon(c, "si", 3, 16, 4, "store_s", false);
+    for (var i = 0; i < STORE.length; i++) {
+        var it = STORE[i], has = storeHas(it);
+        var r = c.createEmptyMovieClip("r" + i, 10 + i);
+        r._y = 52 + i * 84;
+        box(r, 0, 0, 760, 80, i % 2 ? 0xF4F4F4 : WHITE, INK, 1, 0);
+        icon(r, "ic", 1, 8, 8, it[3] == "game" ? it[0] : "swf", false);
+        label(r, "n", 2, 84, 6, 440, 36, it[1], 32, INK, false);
+        label(r, "d", 3, 86, 46, 470, 22, it[2], 16, GREY, false);
+        r.it = it;
+        if (has) {
+            var ob = button(r, "open", 4, 560, 20, 90, 40, "Open", null, 1, 16);
+            ob.it = it;
+            ob.onRelease = function () { if (this.it[3] == "game") launch(this.it[0]); else runSWF(this.it[5], "desk"); };
+            var rb = button(r, "rm", 5, 656, 20, 96, 40, "Remove", null, 0, 16);
+            rb.it = it;
+            rb.onRelease = function () { storeRemove(this.it); };
+        } else {
+            var gb = button(r, "get", 4, 620, 20, 132, 40, "Get", null, 1, 16);
+            gb.it = it;
+            gb.onRelease = function () { storeGet(this.it); };
+        }
+    }
+    var y = 52 + STORE.length * 84 + 10;
+    label(c, "wl", 40, 0, y, 760, 22, "Get from the web (an http:// address of an .swf file):", 16, INK, false);
+    var u = input(c, "url", 41, 0, y + 28, 600, 30, 16);
+    u.text = "http://";
+    button(c, "dl", 42, 610, y + 24, 150, 38, "Download", function () { storeDownload(u.text); }, 0, 16);
+}
+function storeGet(it) {
+    if (it[3] == "game") {
+        cfg.games = cfg.games == "" ? it[0] : cfg.games + "," + it[0];
+        saveCfg();
+        deskAdd("app", it[0]);
+    } else {
+        if (!FlashOS.copyFile(it[4], it[5])) { message("More Apps", "Sorry, " + it[1] + " could not be installed. The disk may be full."); return; }
+        deskAdd("file", it[5]);
+    }
+    storeDraw();
+    paintDock();
+    message("More Apps", it[1] + " is installed! It is on your desktop" + (it[3] == "game" ? " and in the start menu." : "."));
+}
+function storeRemove(it) {
+    ask("More Apps", "Remove " + it[1] + "?", ["Yes", "No"], function (k) {
+        if (k != 0) return;
+        if (it[3] == "game") {
+            var g = cfg.games.split(","), out = [];
+            for (var i = 0; i < g.length; i++) if (g[i] != it[0] && g[i] != "") out.push(g[i]);
+            cfg.games = out.join(",");
+            var d = cfg.dock.split(","), d2 = [];
+            for (i = 0; i < d.length; i++) if (d[i] != it[0]) d2.push(d[i]);
+            if (d2.length >= 4) cfg.dock = d2.join(",");
+            saveCfg();
+            if (wins[it[0]]) closeWindow(wins[it[0]]);
+            deskRemove("app", it[0]);
+        } else {
+            FlashOS.remove(it[5]);
+            deskRemove("file", it[5]);
+        }
+        storeDraw();
+        paintDock();
+    });
+}
+function storeDownload(url) {
+    if (url.toLowerCase().indexOf("http://") != 0) { message("More Apps", "Type an address that starts with http:// (https:// sites cannot be opened)."); return; }
+    var name = base(url);
+    var q = name.indexOf("?");
+    if (q >= 0) name = name.substr(0, q);
+    if (name == "" || ext(name) != "swf") { message("More Apps", "The address must end with the name of an .swf file."); return; }
+    if (!netOk) { var n = FlashOS.netConnect(); if (n != "ok") { message("More Apps", "No internet connection: " + n + "."); return; } netOk = true; }
+    var r = FlashOS.download(url, name);
+    if (r != "ok") { message("More Apps", "Sorry, it could not be downloaded: " + r + "."); return; }
+    deskAdd("file", name);
+    message("More Apps", name + " was downloaded. It is on your desktop.");
+}
+
+// ================================================================ GAMES (they run inside ByroTT, so they multitask)
+function gameKeys(code) {
+    if (isFront("snake")) { snakeKey(code); return code >= 37 && code <= 40 || code == 32; }
+    if (isFront("ball")) return ballKey(code);
+    return false;
+}
+function gameLabel(mc, name, depth, x, y, w, h, text, size, color, align) {
+    var t = label(mc, name, depth, x, y, w, h, "", size, color, false, align);
+    t.multiline = true; t.wordWrap = true;
+    t.text = text;
+    return t;
+}
+function gameMsg(g, title, sub, w, h) {
+    if (g.msg) g.msg.removeMovieClip();
+    if (title == "") return;
+    var m = g.createEmptyMovieClip("msg", 900);
+    var x = Math.round((g.W - w) / 2), y = Math.round((g.H - h) / 2);
+    box(m, x, y, w, h, WHITE, INK, 4, 0);
+    gameLabel(m, "t", 1, x, y + 16, w, 40, title, 32, INK, "center");
+    gameLabel(m, "s", 2, x + 16, y + 64, w - 32, h - 70, sub, 16, INK, "center");
+}
+
+// ---- Ball Game v2.0 (dodge the balls)
+var BALL_HI = "ballgame.hi";
+function openBall() {
+    var w = makeWindow("ball", "Ball Game v2.0", 800, 540, false, function () { delete w.body.onEnterFrame; });
+    if (!w) return;
+    var g = w.body;
+    var GW = 800, GH = 540, TOPY = 76, BAR_H = 22, BAR_Y = GH - 56, BAR_W0 = 130, R = 30;
+    g.W = GW; g.H = GH;
+    box(g, 0, 0, GW, GH, 0x990000, 0, 0, 0);
+    gameLabel(g, "title", 2, 24, 18, 420, 40, "TRY DODGE THE BALL!", 32, WHITE);
+    var scoreT = gameLabel(g, "score", 3, GW - 360, 12, 340, 22, "", 16, WHITE, "right");
+    var levelT = gameLabel(g, "level", 4, GW - 360, 34, 340, 22, "", 16, 0xFFD040, "right");
+    var powT = gameLabel(g, "pow", 5, 24, GH - 26, 740, 22, "", 16, WHITE);
+    var bar = g.createEmptyMovieClip("bar", 10);
+    var barW = BAR_W0, shield = false, bx = (GW - BAR_W0) / 2;
+    function drawBar() {
+        bar.clear();
+        bar.lineStyle(4, shield ? 0x40A0FF : 0x000000, 100);
+        bar.beginFill(shield ? 0xC8E4FF : 0xFFFFFF, 100);
+        bar.moveTo(0, 0); bar.lineTo(barW, 0); bar.lineTo(barW, BAR_H); bar.lineTo(0, BAR_H); bar.lineTo(0, 0);
+        bar.endFill();
+        bar.lineStyle();
+    }
+    bar._y = BAR_Y;
+    drawBar();
+    var balls = [], pows = [], nextId = 0, t0 = 0, playing = false, lastMx = -1, useMouse = false;
+    var level = 1, points = 0, slowUntil = 0, wideUntil = 0, nextPow = 0, lastTick = 0, naming = null;
+    var scores = listLoad(BALL_HI);
+    if (scores == null) scores = [];
+    function best() { return scores.length ? Number(scores[0][1]) : 0; }
+    function table() {
+        var t = "BEST SCORES\n";
+        if (scores.length == 0) return t + "(none yet)\n";
+        for (var i = 0; i < scores.length; i++) t += (i + 1) + ". " + scores[i][0] + "  " + scores[i][1] + "\n";
+        return t;
+    }
+    function hud() { scoreT.text = "POINTS " + points + "   BEST " + Math.max(best(), points); levelT.text = "LEVEL " + level; }
+    function disc(mc, r, fill) {
+        mc.lineStyle(5, INK, 100); mc.beginFill(fill, 100); mc.moveTo(r, 0);
+        for (var i = 1; i <= 28; i++) { var a = i / 28 * Math.PI * 2; mc.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+        mc.endFill(); mc.lineStyle();
+    }
+    function addBall() {
+        var b = g.createEmptyMovieClip("ball" + nextId, 20 + (nextId % 200));
+        nextId++;
+        disc(b, R, WHITE);
+        b._x = R + Math.random() * (GW - 2 * R); b._y = TOPY + R;
+        var sp = 4.5 + level * 0.9, a = (0.25 + Math.random() * 0.5) * Math.PI;
+        b.vx = Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1); b.vy = Math.sin(a) * sp;
+        balls.push(b);
+    }
+    var POWS = [["S", 0x40A0FF], ["T", 0x22CC55], ["W", 0xFFD040]];
+    function addPow() {
+        var k = Math.floor(Math.random() * 3);
+        var p = g.createEmptyMovieClip("pow" + nextId, 230 + (nextId % 50));
+        nextId++;
+        box(p, -18, -18, 36, 36, POWS[k][1], INK, 3, 0);
+        gameLabel(p, "t", 1, -18, -10, 36, 22, POWS[k][0], 16, INK, "center");
+        p.kind = POWS[k][0]; p._x = 40 + Math.random() * (GW - 80); p._y = TOPY;
+        pows.push(p);
+    }
+    function start() {
+        for (var i = 0; i < balls.length; i++) balls[i].removeMovieClip();
+        for (i = 0; i < pows.length; i++) pows[i].removeMovieClip();
+        balls = []; pows = [];
+        level = 1; points = 0; shield = false; barW = BAR_W0; slowUntil = 0; wideUntil = 0;
+        drawBar(); addBall();
+        t0 = getTimer(); lastTick = t0; nextPow = t0 + 6000;
+        playing = true; powT.text = "";
+        gameMsg(g, "", "");
+    }
+    function over() {
+        playing = false;
+        if (points > 0 && (scores.length < 5 || points > Number(scores[scores.length - 1][1]))) {
+            gameMsg(g, "NEW BEST SCORE!", points + " POINTS\n\nTYPE YOUR NAME AND PRESS ENTER:", 460, 230);
+            naming = input(g.msg, "nm", 3, 230, 330, 340, 28, 16);
+            naming.maxChars = 12;
+            Selection.setFocus(naming);
+            w.focusField = naming;
+        } else gameMsg(g, "THE BALL HIT YOU!", "LEVEL " + level + "   " + points + " POINTS\n\n" + table() + "\nPRESS SPACE OR CLICK TO PLAY AGAIN", 460, 330);
+    }
+    // keys from gameKeys (only when this window is in front)
+    g.key = function (code) {
+        if (naming) {
+            if (code == 13) {
+                var n = naming.text == "" ? "PLAYER" : naming.text.toUpperCase();
+                naming = null; w.focusField = null; Selection.setFocus(null);
+                scores.push([n, "" + points]);
+                scores.sort(function (a, b) { return Number(b[1]) - Number(a[1]); });
+                while (scores.length > 5) scores.pop();
+                listSave(BALL_HI, scores);
+                gameMsg(g, "SAVED!", "LEVEL " + level + "   " + points + " POINTS\n\n" + table() + "\nPRESS SPACE OR CLICK TO PLAY AGAIN", 460, 330);
+            }
+            return true;
+        }
+        if (code == 32 && !playing) { start(); return true; }
+        return code == 37 || code == 39;
+    };
+    var hit = g.createEmptyMovieClip("hit", 1);
+    box(hit, 0, 0, GW, GH, 0xFFFFFF, 0, 0, 0);
+    hit._alpha = 0;
+    hit.useHandCursor = false;
+    hit.onPress = function () { if (!playing && !naming) start(); };
+    g.onEnterFrame = function () {
+        if (!isFront("ball")) return;              // paused while another window is in front
+        if (g._xmouse != lastMx) { if (lastMx >= 0) useMouse = true; lastMx = g._xmouse; }
+        if (Key.isDown(37)) { bx -= 11; useMouse = false; }
+        if (Key.isDown(39)) { bx += 11; useMouse = false; }
+        if (useMouse && g._xmouse >= 0 && g._xmouse <= GW && g._ymouse >= 0 && g._ymouse <= GH) bx = g._xmouse - barW / 2;
+        if (bx < 0) bx = 0;
+        if (bx > GW - barW) bx = GW - barW;
+        bar._x = bx;
+        if (!playing) return;
+        var now = getTimer();
+        while (now - lastTick >= 100) { lastTick += 100; points += level; }
+        var nl = 1 + Math.floor((now - t0) / 15000);
+        if (nl != level) { level = nl; if (balls.length < 6) addBall(); }
+        if (now >= nextPow) { addPow(); nextPow = now + 7000 + Math.random() * 5000; }
+        if (wideUntil && now > wideUntil) { wideUntil = 0; barW = BAR_W0; drawBar(); }
+        var slow = now < slowUntil ? 0.5 : 1, st = "";
+        if (shield) st += "SHIELD   ";
+        if (slow < 1) st += "SLOW TIME " + Math.ceil((slowUntil - now) / 1000) + "   ";
+        if (wideUntil) st += "WIDE BAR " + Math.ceil((wideUntil - now) / 1000);
+        powT.text = st;
+        hud();
+        for (var p = pows.length - 1; p >= 0; p--) {
+            var q = pows[p];
+            q._y += 3;
+            if (q._y + 18 >= BAR_Y && q._y - 18 <= BAR_Y + BAR_H && q._x + 18 >= bx && q._x - 18 <= bx + barW) {
+                if (q.kind == "S") { shield = true; drawBar(); }
+                if (q.kind == "T") slowUntil = now + 6000;
+                if (q.kind == "W") { wideUntil = now + 8000; barW = 210; drawBar(); }
+                q.removeMovieClip(); pows.splice(p, 1);
+            } else if (q._y > GH + 20) { q.removeMovieClip(); pows.splice(p, 1); }
+        }
+        for (var i = 0; i < balls.length; i++) {
+            var b = balls[i];
+            b._x += b.vx * slow; b._y += b.vy * slow;
+            if (b._x < R) { b._x = R; b.vx = -b.vx; }
+            if (b._x > GW - R) { b._x = GW - R; b.vx = -b.vx; }
+            if (b._y < TOPY + R) { b._y = TOPY + R; b.vy = -b.vy; }
+            if (b._y > GH - R) { b._y = GH - R; b.vy = -b.vy; }
+            var nx = Math.max(bx, Math.min(b._x, bx + barW)), ny = Math.max(BAR_Y, Math.min(b._y, BAR_Y + BAR_H));
+            var dx = b._x - nx, dy = b._y - ny;
+            if (dx * dx + dy * dy < (R - 2) * (R - 2)) {
+                if (shield) { shield = false; drawBar(); b.vy = -Math.abs(b.vy); b._y = BAR_Y - R - 2; continue; }
+                over();
+                return;
+            }
+        }
+    };
+    hud();
+    gameMsg(g, "BALL GAME v2.0", "ARROWS OR MOUSE MOVE THE WHITE BAR.\nDO NOT LET THE BALLS TOUCH IT!\nCATCH  S = SHIELD   T = SLOW TIME   W = WIDE BAR\n\n" + table() + "\nPRESS SPACE OR CLICK TO START", 520, 380);
+}
+function ballKey(code) { var w = wins["ball"]; return w ? w.body.key(code) : false; }
+
+// ---- Snake
+var snakeDir = 1, snakeNext = 1;
+function openSnake() {
+    var w = makeWindow("snake", "Snake", 600, 500, false, null);
+    if (!w) return;
+    var g = w.body, CS = 24, CW = 25, CH = 19, OY = 40;
+    g.W = 600; g.H = 500;
+    box(g, 0, 0, 600, 500, 0x1E8C3C, 0, 0, 0);
+    box(g, 0, OY, CW * CS, CH * CS, 0x2FAE5B, INK, 2, 0);
+    var sc = gameLabel(g, "sc", 2, 10, 8, 300, 24, "", 16, WHITE);
+    var bt = gameLabel(g, "bt", 3, 290, 8, 300, 24, "", 16, WHITE, "right");
+    var layer = g.createEmptyMovieClip("l", 10);
+    var body, food, alive = false, score = 0, frames = 0, speed = 8;
+    var best = cfg.snakebest == undefined ? 0 : Number(cfg.snakebest);
+    function cell(x, y, col) { box(layer, x * CS + 1, OY + y * CS + 1, CS - 2, CS - 2, col, INK, 2, 0); }
+    function placeFood() {
+        while (true) {
+            var fx = Math.floor(Math.random() * CW), fy = Math.floor(Math.random() * CH), ok = true;
+            for (var i = 0; i < body.length; i++) if (body[i][0] == fx && body[i][1] == fy) ok = false;
+            if (ok) { food = [fx, fy]; return; }
+        }
+    }
+    function draw() {
+        layer.clear();
+        circle(layer, food[0] * CS + CS / 2, OY + food[1] * CS + CS / 2, CS / 2 - 2, 0xE02828);
+        for (var i = 0; i < body.length; i++) cell(body[i][0], body[i][1], i == 0 ? 0xC8FF60 : 0x78E650);
+        sc.text = "SCORE " + score;
+        bt.text = "BEST " + best;
+    }
+    function start() {
+        body = [[12, 9], [11, 9], [10, 9]];
+        snakeDir = snakeNext = 1;          // 0 up, 1 right, 2 down, 3 left
+        score = 0; speed = 8; alive = true;
+        placeFood();
+        gameMsg(g, "", "");
+        draw();
+    }
+    g.start = start;
+    g.alive = function () { return alive; };
+    g.onEnterFrame = function () {
+        if (!alive || !isFront("snake")) return;
+        if (++frames % speed) return;
+        if ((snakeNext + 2) % 4 != snakeDir) snakeDir = snakeNext;
+        var h = body[0], nx = h[0] + (snakeDir == 1 ? 1 : snakeDir == 3 ? -1 : 0), ny = h[1] + (snakeDir == 2 ? 1 : snakeDir == 0 ? -1 : 0);
+        var dead = nx < 0 || ny < 0 || nx >= CW || ny >= CH;
+        for (var i = 0; i < body.length - 1 && !dead; i++) if (body[i][0] == nx && body[i][1] == ny) dead = true;
+        if (dead) {
+            alive = false;
+            if (score > best) { best = score; cfg.snakebest = "" + best; saveCfg(); }
+            gameMsg(g, "GAME OVER", "SCORE " + score + "   BEST " + best + "\n\nPRESS SPACE TO PLAY AGAIN", 400, 170);
+            return;
+        }
+        body.unshift([nx, ny]);
+        if (nx == food[0] && ny == food[1]) { score += 10; if (score % 50 == 0 && speed > 3) speed--; placeFood(); }
+        else body.pop();
+        draw();
+    };
+    body = [[12, 9], [11, 9], [10, 9]];
+    food = [18, 9];
+    draw();
+    gameMsg(g, "SNAKE", "ARROW KEYS TURN THE SNAKE.\nEAT THE RED APPLES, DO NOT HIT THE WALLS OR YOURSELF.\n\nPRESS SPACE TO START", 460, 200);
+}
+function snakeKey(code) {
+    var g = wins["snake"].body;
+    if (code == 38) snakeNext = 0;
+    if (code == 39) snakeNext = 1;
+    if (code == 40) snakeNext = 2;
+    if (code == 37) snakeNext = 3;
+    if (code == 32 && !g.alive()) g.start();
+}
+
+// ---- Minesweeper
+function minesAround(mine, N, i) {
+    var x = i % N, y = Math.floor(i / N), c = 0;
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        var nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < N && ny < N && mine[ny * N + nx]) c++;
+    }
+    return c;
+}
+function openMines() {
+    var N = 16, M = 40, CS = 30;
+    var w = makeWindow("mines", "Minesweeper", N * CS + 20, N * CS + 70, false, null);
+    if (!w) return;
+    var g = w.body;
+    g.W = N * CS + 20; g.H = N * CS + 70;
+    box(g, 0, 0, g.W, g.H, 0xC0C0C0, 0, 0, 0);
+    var count = gameLabel(g, "c", 2, 10, 12, 120, 24, "", 16, 0xC00000);
+    var timeT = gameLabel(g, "tm", 3, g.W - 130, 12, 120, 24, "", 16, 0xC00000, "right");
+    var face = button(g, "face", 4, 250, 6, 110, 34, "New game", function () { reset(); }, 0, 16);
+    var flagBtn = button(g, "flag", 5, 128, 6, 110, 34, "Flag: off", function () { flagMode = !flagMode; flagBtn.lab.text = flagMode ? "Flag: ON" : "Flag: off"; flagBtn.setOn(flagMode); }, 2, 16);
+    var grid = g.createEmptyMovieClip("grid", 10);
+    grid._x = 10; grid._y = 50;
+    var mine, open, flag, near, started, over, flagMode = false, t0, opened;
+    function reset() {
+        mine = []; open = []; flag = []; near = [];
+        for (var i = 0; i < N * N; i++) { mine[i] = false; open[i] = false; flag[i] = false; near[i] = 0; }
+        started = false; over = false; opened = 0;
+        timeT.text = "TIME 0";
+        draw();
+    }
+    function layMines(safe) {
+        var k = 0;
+        while (k < M) {
+            var i = Math.floor(Math.random() * N * N);
+            if (mine[i] || Math.abs(i % N - safe % N) <= 1 && Math.abs(Math.floor(i / N) - Math.floor(safe / N)) <= 1) continue;
+            mine[i] = true; k++;
+        }
+        for (i = 0; i < N * N; i++) near[i] = minesAround(mine, N, i);
+    }
+    var COLS = [0, 0x0000FF, 0x008000, 0xFF0000, 0x000080, 0x800000, 0x008080, 0x000000, 0x808080];
+    function draw() {
+        for (var i = 0; i < N * N; i++) {
+            var c = grid["c" + i];
+            if (!c) {
+                c = grid.createEmptyMovieClip("c" + i, i + 1);
+                c._x = (i % N) * CS; c._y = Math.floor(i / N) * CS;
+                c.k = i;
+                c.onRelease = function () { press(this.k, flagMode || Key.isDown(16)); };
+            }
+            c.clear();
+            if (c.t) c.t.removeTextField();
+            if (!c.fl) c.fl = c.createEmptyMovieClip("fl", 2);
+            c.fl.clear();
+            if (open[i]) {
+                box(c, 0, 0, CS, CS, mine[i] ? 0xFF4040 : 0xE8E8E8, 0x808080, 1, 0);
+                if (mine[i]) circle(c.fl, CS / 2, CS / 2, 8, INK);
+                else if (near[i]) gameLabel(c, "t", 1, 0, 6, CS, 22, "" + near[i], 16, COLS[near[i]], "center");
+            } else {
+                box(c, 0, 0, CS, CS, 0xC0C0C0, 0, 0, 0);
+                bevel(c.fl, 0, 0, CS, CS, true);
+                box(c.fl, 0, 0, CS, 2, WHITE, 0, 0, 0); box(c.fl, 0, 0, 2, CS, WHITE, 0, 0, 0);
+                if (flag[i]) { box(c.fl, 13, 6, 2, 18, INK, 0, 0, 0); c.fl.beginFill(0xFF0000, 100); c.fl.moveTo(15, 6); c.fl.lineTo(24, 10); c.fl.lineTo(15, 14); c.fl.endFill(); }
+                if (over && mine[i] && !flag[i]) circle(c.fl, CS / 2, CS / 2, 8, INK);
+            }
+        }
+        var f = 0;
+        for (i = 0; i < N * N; i++) if (flag[i]) f++;
+        count.text = "MINES " + (M - f);
+    }
+    function press(i, asFlag) {
+        if (over || open[i]) return;
+        if (asFlag) { flag[i] = !flag[i]; draw(); return; }
+        if (flag[i]) return;
+        if (!started) { started = true; layMines(i); t0 = getTimer(); }
+        if (mine[i]) {
+            over = true; open[i] = true; draw();
+            message("Minesweeper", "BOOM! You stepped on a mine.\nPress New game to try again.");
+            return;
+        }
+        var stack = [i];
+        while (stack.length) {
+            var k = stack.pop();
+            if (open[k] || flag[k]) continue;
+            open[k] = true; opened++;
+            if (near[k] == 0) {
+                var x = k % N, y = Math.floor(k / N);
+                for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+                    var nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && ny >= 0 && nx < N && ny < N && !open[ny * N + nx]) stack.push(ny * N + nx);
+                }
+            }
+        }
+        draw();
+        if (opened == N * N - M) {
+            over = true;
+            message("Minesweeper", "You found all the mines in " + Math.floor((getTimer() - t0) / 1000) + " seconds. Well done!");
+        }
+    }
+    g.onEnterFrame = function () { if (started && !over) timeT.text = "TIME " + Math.floor((getTimer() - t0) / 1000); };
+    reset();
+}
+
+// ---- Solitaire (Klondike, one card at a time): click a card, then where it goes
+// the four suits, drawn (s: 0 spades, 1 hearts, 2 diamonds, 3 clubs) around cx, cy
+function suit(mc, cx, cy, r, s, col) {
+    mc.beginFill(col, 100);
+    if (s == 2) { mc.moveTo(cx, cy - r); mc.lineTo(cx + r * 0.75, cy); mc.lineTo(cx, cy + r); mc.lineTo(cx - r * 0.75, cy); mc.lineTo(cx, cy - r); mc.endFill(); return; }
+    if (s == 1) {                                  // heart: two circles and a point
+        mc.endFill();
+        circle(mc, cx - r * 0.45, cy - r * 0.3, r * 0.5, col);
+        circle(mc, cx + r * 0.45, cy - r * 0.3, r * 0.5, col);
+        mc.beginFill(col, 100);
+        mc.moveTo(cx - r * 0.93, cy - r * 0.15); mc.lineTo(cx + r * 0.93, cy - r * 0.15); mc.lineTo(cx, cy + r); mc.lineTo(cx - r * 0.93, cy - r * 0.15);
+        mc.endFill();
+        return;
+    }
+    mc.endFill();
+    if (s == 0) {                                  // spade: an upside-down heart and a stem
+        circle(mc, cx - r * 0.45, cy + r * 0.2, r * 0.5, col);
+        circle(mc, cx + r * 0.45, cy + r * 0.2, r * 0.5, col);
+        mc.beginFill(col, 100);
+        mc.moveTo(cx - r * 0.93, cy + r * 0.05); mc.lineTo(cx + r * 0.93, cy + r * 0.05); mc.lineTo(cx, cy - r); mc.lineTo(cx - r * 0.93, cy + r * 0.05);
+        mc.endFill();
+    } else {                                       // club: three circles and a stem
+        circle(mc, cx, cy - r * 0.45, r * 0.42, col);
+        circle(mc, cx - r * 0.48, cy + r * 0.12, r * 0.42, col);
+        circle(mc, cx + r * 0.48, cy + r * 0.12, r * 0.42, col);
+    }
+    mc.beginFill(col, 100);
+    mc.moveTo(cx - r * 0.12, cy); mc.lineTo(cx + r * 0.12, cy); mc.lineTo(cx + r * 0.35, cy + r); mc.lineTo(cx - r * 0.35, cy + r); mc.lineTo(cx - r * 0.12, cy);
+    mc.endFill();
+}
+function openSolitaire() {
+    var w = makeWindow("solitaire", "Solitaire", 860, 570, false, null);
+    if (!w) return;
+    var g = w.body, CW = 84, CHh = 116;
+    g.W = 860; g.H = 570;
+    var RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+    var stock, waste, found, tab, sel = null, moves = 0;
+    box(g, 0, 0, 860, 570, 0x0A7A3A, 0, 0, 0);
+    var info = gameLabel(g, "info", 2, 200, 12, 260, 22, "", 16, WHITE);
+    button(g, "nw", 3, 200, 60, 120, 36, "New game", function () { deal(); }, 0, 16);
+    var table = g.createEmptyMovieClip("t", 10);
+    function red(c) { return c.s == 1 || c.s == 2; }
+    function deal() {
+        var deck = [];
+        for (var s = 0; s < 4; s++) for (var r = 0; r < 13; r++) deck.push({s: s, r: r, up: false});
+        for (var i = deck.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = deck[i]; deck[i] = deck[j]; deck[j] = t; }
+        tab = [];
+        for (i = 0; i < 7; i++) { tab[i] = []; for (j = 0; j <= i; j++) { var c = deck.pop(); c.up = j == i; tab[i].push(c); } }
+        stock = deck; waste = []; found = [[], [], [], []]; sel = null; moves = 0;
+        draw();
+    }
+    function card(mc, name, depth, x, y, c, hl) {
+        var k = mc.createEmptyMovieClip(name, depth);
+        k._x = x; k._y = y;
+        if (!c) { box(k, 0, 0, CW, CHh, 0x0A6A32, 0x80C090, 2, 0); return k; }
+        if (!c.up) {
+            box(k, 0, 0, CW, CHh, WHITE, INK, 2, 0);
+            var bk = k.createEmptyMovieClip("bk", 1);
+            box(bk, 5, 5, CW - 10, CHh - 10, C1 == 0xB4FFFF ? 0x1E7BFF : C1, 0, 0, 0);
+            return k;
+        }
+        box(k, 0, 0, CW, CHh, hl ? 0xFFF4A0 : WHITE, hl ? 0xFF8C00 : INK, hl ? 4 : 2, 0);
+        var col = red(c) ? 0xD00000 : INK;
+        label(k, "a", 1, 5, 3, 60, 22, RANKS[c.r], 16, col, false);
+        var sm = k.createEmptyMovieClip("s", 3);         // own clip: overlapping fills cancel clicks
+        suit(sm, 12, 32, 7, c.s, col);
+        suit(sm, CW / 2, CHh / 2 + 6, 20, c.s, col);
+        return k;
+    }
+    function draw() {
+        table.removeMovieClip();
+        table = g.createEmptyMovieClip("t", 10);
+        var d = 1, i, j;
+        // stock and waste
+        var st = card(table, "st", d++, 10, 10, stock.length ? {up: false} : null, false);
+        st.onRelease = function () { clickStock(); };
+        if (waste.length) {
+            var wc = card(table, "wa", d++, 104, 10, waste[waste.length - 1], sel && sel.p == "w");
+            wc.onRelease = function () { clickPile("w", 0, waste.length - 1); };
+        } else card(table, "wa", d++, 104, 10, null, false);
+        // the four foundations
+        for (i = 0; i < 4; i++) {
+            var f = found[i], fc = card(table, "f" + i, d++, 470 + i * 96, 10, f.length ? f[f.length - 1] : null, sel && sel.p == "f" && sel.i == i);
+            if (!f.length) { var fs = fc.createEmptyMovieClip("s", 5); suit(fs, CW / 2, CHh / 2, 20, i, 0x60A070); }
+            fc.i = i;
+            fc.onRelease = function () { clickPile("f", this.i, found[this.i].length - 1); };
+        }
+        // the seven columns
+        for (i = 0; i < 7; i++) {
+            var col = tab[i], x = 10 + i * 120, y = 140;
+            if (!col.length) { var e = card(table, "e" + i, d++, x, y, null, false); e.i = i; e.onRelease = function () { clickPile("t", this.i, -1); }; }
+            for (j = 0; j < col.length; j++) {
+                var hl = sel && sel.p == "t" && sel.i == i && j >= sel.k;
+                var cc = card(table, "c" + i + "_" + j, d++, x, y, col[j], hl);
+                cc.i = i; cc.k = j;
+                cc.onRelease = function () { clickPile("t", this.i, this.k); };
+                y += col[j].up ? 26 : 12;
+            }
+        }
+        var done = found[0].length + found[1].length + found[2].length + found[3].length;
+        info.text = "MOVES " + moves + "    ON THE PILES " + done + " / 52";
+        if (done == 52) message("Solitaire", "You won in " + moves + " moves! Press New game to play again.");
+    }
+    function clickStock() {
+        sel = null;
+        if (stock.length) { var c = stock.pop(); c.up = true; waste.push(c); }
+        else { while (waste.length) { var c2 = waste.pop(); c2.up = false; stock.push(c2); } }
+        moves++;
+        draw();
+    }
+    function cardsOf(s) {
+        if (s.p == "w") return [waste[waste.length - 1]];
+        if (s.p == "f") return [found[s.i][found[s.i].length - 1]];
+        return tab[s.i].slice(s.k);
+    }
+    function removeFrom(s) {
+        if (s.p == "w") waste.pop();
+        else if (s.p == "f") found[s.i].pop();
+        else { tab[s.i].splice(s.k); var col = tab[s.i]; if (col.length && !col[col.length - 1].up) col[col.length - 1].up = true; }
+    }
+    function canFound(c, i) { var f = found[i]; return c.s == i && (f.length ? f[f.length - 1].r == c.r - 1 : c.r == 0); }
+    function canTab(c, i) {
+        var col = tab[i];
+        if (!col.length) return c.r == 12;
+        var t = col[col.length - 1];
+        return t.up && t.r == c.r + 1 && red(t) != red(c);
+    }
+    function tryMove(s, p, i) {
+        var cs = cardsOf(s);
+        if (p == "f" && cs.length == 1 && canFound(cs[0], i)) { removeFrom(s); found[i].push(cs[0]); return true; }
+        if (p == "t" && !(s.p == "t" && s.i == i) && canTab(cs[0], i)) { removeFrom(s); for (var k = 0; k < cs.length; k++) tab[i].push(cs[k]); return true; }
+        return false;
+    }
+    var lastT = 0, lastKey = "";
+    function clickPile(p, i, k) {
+        var key = p + i + "_" + k, dbl = key == lastKey && getTimer() - lastT < 450;
+        lastKey = key; lastT = getTimer();
+        if (p == "t" && k >= 0 && !tab[i][k].up) {           // a face-down card: turn the top one
+            if (k == tab[i].length - 1) { tab[i][k].up = true; sel = null; draw(); }
+            return;
+        }
+        if (dbl && k >= 0) {                                 // double click: to its pile
+            var s0 = {p: p, i: i, k: k};
+            if (p != "f" && (p == "w" || k == tab[i].length - 1)) {
+                var c = cardsOf(s0)[0];
+                if (canFound(c, c.s)) { removeFrom(s0); found[c.s].push(c); sel = null; moves++; draw(); return; }
+            }
+        }
+        if (sel) {
+            var ok = tryMove(sel, p, i);
+            sel = null;
+            if (ok) { moves++; draw(); return; }
+        }
+        if (k < 0 || (p == "f" && !found[i].length)) { draw(); return; }
+        sel = {p: p, i: i, k: k};
+        draw();
+    }
+    deal();
+}
+
+// ================================================================ LOGIN
+// at startup (and Log Off): your picture and name; a password if you set one
+var loginOn = false, loginField = null, loginFirst = true;
+var AVATARS = ["bird", "ball", "pyramid", "sun", "cat", "rocket"];
+function showLogin() {
+    closeMenu();
+    closeCalendar();
+    if (!loginFirst) while (winOrder.length) closeWindow(winOrder[winOrder.length - 1]);   // Log Off closes the apps
+    loginOn = true;
+    var L = _root.createEmptyMovieClip("login", 78);
+    box(L, 0, 0, W, H, 0x000000, 0, 0, 0);
+    L.onPress = function () {};
+    L.useHandCursor = false;
+    var pw = 460, ph = cfg.upass == "" ? 330 : 380;
+    var p = L.createEmptyMovieClip("p", 2);
+    p._x = (W - pw) / 2; p._y = (H - ph) / 2;
+    var g = p.createEmptyMovieClip("g", 1);
+    titleBar(g, 0, 0, pw, 30);
+    box(g, 0, 32, pw, ph - 32, WHITE, INK, 2, 0);
+    label(p, "t", 2, 8, 6, pw - 16, 22, "Welcome to ByroTT 3.0", 16, onC1(), false);
+    picture(p, "av", 3, (pw - 128) / 2, 50, "avatar_" + cfg.upic + ".png");
+    label(p, "n", 4, 0, 188, pw, 40, cfg.uname, 32, INK, false, "center");
+    if (cfg.upass != "") {
+        label(p, "pl", 5, 60, 240, 120, 22, "Password:", 16, INK, false);
+        loginField = input(p, "pf", 6, 150, 236, 250, 28, 16);
+        loginField.password = true;
+        Selection.setFocus(loginField);
+    } else loginField = null;
+    p.err = label(p, "err", 7, 0, ph - 108, pw, 22, "", 16, 0xC00000, false, "center");
+    button(p, "go", 8, (pw - 160) / 2, ph - 72, 160, 44, "Log In", function () { loginTry(); }, 1, 16);
+}
+function loginKey(code) { if (code == 13) loginTry(); }
+function loginTry() {
+    var L = _root.login;
+    if (cfg.upass != "" && hashPass(loginField.text) != cfg.upass) {
+        L.p.err.text = "Wrong Password";
+        loginField.text = "";
+        Selection.setFocus(loginField);
+        return;
+    }
+    Selection.setFocus(null);
+    L.removeMovieClip();
+    loginOn = false;
+    idle = getTimer();
+    if (loginFirst) { loginFirst = false; afterLogin(); }
+}
+// Settings > User Account: name, picture, password
+function userDialog() {
+    closeMenu();
+    var d = dialogLayer.createEmptyMovieClip("dim", 1);
+    box(d, 0, 0, W, H, 0x000000, 0, 0, 0);
+    d._alpha = 50;
+    d.onPress = function () {};
+    d.useHandCursor = false;
+    var p = dialogLayer.createEmptyMovieClip("panel", 2);
+    var pw = 640, ph = 400;
+    p._x = (W - pw) / 2; p._y = (H - ph) / 2;
+    var g = p.createEmptyMovieClip("g", 1);
+    titleBar(g, 0, 0, pw, 28);
+    box(g, 0, 30, pw, ph - 30, WHITE, INK, 2, 0);
+    label(p, "t", 2, 8, 5, pw - 20, 22, "User Account", 16, onC1(), false);
+    label(p, "nl", 3, 24, 52, 100, 22, "Name:", 16, INK, false);
+    var nf = input(p, "nf", 4, 100, 48, 300, 28, 16);
+    nf.text = cfg.uname;
+    nf.maxChars = 20;
+    label(p, "pl", 5, 24, 98, 300, 22, "Picture:", 16, INK, false);
+    var pick = p.createEmptyMovieClip("pick", 6);
+    function drawPics() {
+        for (var i = 0; i < AVATARS.length; i++) {
+            var a = pick["a" + i];
+            if (!a) {
+                a = pick.createEmptyMovieClip("a" + i, i + 1);
+                a._x = 24 + i * 98; a._y = 124;
+                a.fr = a.createEmptyMovieClip("fr", 1);
+                var pc = picture(a, "pc", 2, 4, 4, "avatar_" + AVATARS[i] + ".png");
+                pc._xscale = pc._yscale = 65;
+                a.k = AVATARS[i];
+                a.onRelease = function () { cfg.upic = this.k; drawPics(); };
+            }
+            a.fr.clear();
+            box(a.fr, 0, 0, 92, 92, cfg.upic == AVATARS[i] ? C1 : WHITE, INK, cfg.upic == AVATARS[i] ? 3 : 1, 0);
+        }
+    }
+    drawPics();
+    var pst = label(p, "ps", 7, 24, 246, 400, 22, "", 16, INK, false);
+    function pwText() { pst.text = "Login password: " + (cfg.upass == "" ? "none" : "set"); }
+    pwText();
+    button(p, "pw", 8, 24, 274, 200, 38, cfg.upass == "" ? "Set password..." : "Change password...", function () {
+        var name = nf.text;
+        askPassword("Login Password", "New login password\n(leave it empty for no password):", function (a) {
+            if (a == "") { cfg.upass = ""; cfg.uname = name == "" ? "User" : name; saveCfg(); message("User Account", "No password at login now."); return; }
+            askPassword("Login Password", "Type it again:", function (b2) {
+                cfg.uname = name == "" ? "User" : name;
+                if (a != b2) { message("User Account", "The two passwords are not the same. Nothing changed."); return; }
+                cfg.upass = hashPass(a);
+                saveCfg();
+                message("User Account", "Password set. ByroTT asks for it at login.");
+            });
+        });
+    }, 0, 16);
+    button(p, "ok", 9, pw - 130, ph - 56, 110, 40, "OK", function () {
+        cfg.uname = nf.text == "" ? "User" : nf.text;
+        saveCfg();
+        closeDialog();
+        settingsPage("");
+    }, 1, 16);
+    dialogKeys = function (code) { if (code == 27) closeDialog(); };
+}
+
+// ================================================================ SCREENSAVER
+// after some minutes with no mouse or keys: your bird logo bounces on black
+var saverOn = false, saverMx = 0, saverMy = 0;
+function saverStart() {
+    saverOn = true;
+    closeMenu();
+    var S = _root.createEmptyMovieClip("saver", 90);
+    box(S, 0, 0, W, H, 0x000000, 0, 0, 0);
+    var lg = logo(S, "lg", 2, 100, 100, 240, C1 == 0xB4FFFF ? 0x1EC8DC : C1);
+    var vx = 3, vy = 2;
+    S.onEnterFrame = function () {
+        lg._x += vx; lg._y += vy;
+        if (lg._x < 0 || lg._x > W - 240) { vx = -vx; new Color(lg).setRGB(THEMES[THEME_NAMES[Math.floor(Math.random() * 5)]][1] | 0x404040); }
+        if (lg._y < 0 || lg._y > H - 240) { vy = -vy; new Color(lg).setRGB(THEMES[THEME_NAMES[Math.floor(Math.random() * 5)]][0]); }
+    };
+    S.onPress = function () { saverOff(); };
+    cursorClip._visible = false;
+    saverMx = _root._xmouse; saverMy = _root._ymouse;
+}
+function saverOff() {
+    if (!saverOn) return;
+    saverOn = false;
+    _root.saver.removeMovieClip();
+    cursorClip._visible = true;
+    idle = getTimer();
+}
+setInterval(function () {
+    var m = Number(cfg.saver);
+    if (saverOn) { if (Math.abs(_root._xmouse - saverMx) + Math.abs(_root._ymouse - saverMy) > 12) saverOff(); return; }
+    if (m > 0 && !loginOn && idle > 0 && getTimer() - idle > m * 60000) saverStart();
+}, 500);
 
 // ================================================================ keyboard
 var keyL = {};
@@ -1868,7 +3230,14 @@ keyL.onKeyDown = function () {
     if (dialogKeys) { dialogKeys(code); return; }
     if (menuOpen && code == 27) { closeMenu(); return; }
     var f = Selection.getFocus();
-    if (Key.isDown(17) && code == 84) { openTerminal(""); return; }   // Ctrl+T
+    if (saverOn) { saverOff(); return; }
+    if (loginOn) { loginKey(code); return; }
+    if (Key.isDown(17) && code == 84) { launch("term"); return; }   // Ctrl+T
+    if (Key.isDown(17) && code == 87 && curApp) { closeWindow(curApp); return; }   // Ctrl+W
+    if (Key.isDown(17) && code == 83) {                                             // Ctrl+S
+        if (isFront("notepad")) { noteSave(false); return; }
+        if (isFront("paint")) { paintSave(false, null); return; }
+    }
     if (termIn && f != null && f.indexOf("in") >= 0 && f.indexOf("w_term") >= 0) {
         if (code == 13) {
             var line = termIn.text;
@@ -1887,7 +3256,8 @@ keyL.onKeyDown = function () {
         if (code == 33 || code == 34) webScrollBy((code == 34 ? 1 : -1) * (WEB_VIEW - 60));
         return;
     }
-    if (webPage && wins["web"]) {          // not typing: the keys scroll the page
+    if (gameKeys(code)) return;
+    if (webPage && isFront("web")) {          // not typing: the keys scroll the page
         if (code == 40) webScrollBy(48);
         if (code == 38) webScrollBy(-48);
         if (code == 34 || code == 32) webScrollBy(WEB_VIEW - 60);
@@ -1899,9 +3269,11 @@ keyL.onKeyDown = function () {
 Key.addListener(keyL);
 
 // ================================================================ start
+var launchParts = [];
 function startDesktop() {
     loadCfg();
     setWallpaper(cfg.wallpaper);
+    deskLoad();
     buildIcons();
     paintTaskbar();
     buildClock();
@@ -1909,7 +3281,12 @@ function startDesktop() {
     applyCursor();
     tick();
     var arg = FlashOS.launchArg ? FlashOS.launchArg() : "";
-    var parts = arg.split("|");
+    launchParts = arg.split("|");
+    // back from a game: no login again
+    if (arg == "") showLogin(); else afterLogin();
+}
+function afterLogin() {
+    var parts = launchParts;
     if (parts[0] == "terminal") {
         var msg = parts.length > 1 && parts[1] != "" ? "  " + parts[1] + " finished." : "";
         if (parts.length > 2) msg = "  " + parts[1] + ": " + parts[2];

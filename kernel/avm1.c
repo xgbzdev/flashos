@@ -3046,7 +3046,7 @@ static val nf_osFiles(ctx *c, val th, val *a, int n) {
             }
             obj *o = new_obj(obj_proto);
             if (!o) break;
-            set_own(o, "name", vstr(nm));
+            set_own(o, "name", vstr(pass == 0 ? astrdup(nm) : nm));   /* disk names change when a slot is reused */
             set_own(o, "size", vnum(size));
             set_own(o, "where", vstr(where));
             arr_set(arr, k++, vobj(o));
@@ -3255,6 +3255,38 @@ static val nf_bImgReset(ctx *c, val th, val *a, int n) {
     img_used = 0;
     return vundef();
 }
+/* music: musicPlay(file) -> "ok" or why not; musicPause(bool); musicStop();
+ * musicSeek(sec); musicState() -> {playing, pos, len, done} (seconds) */
+static val nf_mPlay(ctx *c, val th, val *a, int n) { (void)c; (void)th; return vstr(astrdup(music_open(as_tostring(ARG(0))))); }
+static val nf_mPause(ctx *c, val th, val *a, int n) { (void)c; (void)th; music_pause(to_bool(ARG(0))); return vundef(); }
+static val nf_mStop(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; music_stop(); return vundef(); }
+static val nf_mSeek(ctx *c, val th, val *a, int n) { (void)c; (void)th; music_seek(to_i32(ARG(0))); return vundef(); }
+static val nf_mState(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th; (void)a; (void)n;
+    obj *o = new_obj(obj_proto);
+    if (!o) return vobj(NULL);
+    set_own(o, "playing", vbool(music_playing()));
+    set_own(o, "pos", vnum(music_position()));
+    set_own(o, "len", vnum(music_length()));
+    set_own(o, "done", vbool(music_done()));
+    return vobj(o);
+}
+/* download(url, name): save a file from the web on the disk; "ok" or why not */
+static val nf_bDownload(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    const u32 cap = 4u << 20;
+    if (!net_buf) net_buf = amalloc(cap);
+    if (!net_buf) return vstr("not enough memory");
+    u8 *data = NULL;
+    u32 len = 0;
+    int status = 0;
+    static char err[64];
+    err[0] = 0;
+    if (!net_get_buf(as_tostring(ARG(0)), net_buf, cap, &data, &len, &status, err)) return vstr(astrdup(err[0] ? err : "download failed"));
+    if (status >= 400) return vstr("the server said the file is not there");
+    if (!docs_write(as_tostring(n > 1 ? a[1] : vundef()), data, len)) return vstr("the disk is full");
+    return vstr("ok");
+}
 /* print(text): on the printer (LPT1); "ok" or why not */
 static val nf_bPrint(ctx *c, val th, val *a, int n) {
     (void)c; (void)th;
@@ -3305,6 +3337,12 @@ static void byrott_api(obj *f) {
     def_native(f, "cursorColor", nf_bCursor);
     def_native(f, "httpImage", nf_bHttpImage);
     def_native(f, "print", nf_bPrint);
+    def_native(f, "download", nf_bDownload);
+    def_native(f, "musicPlay", nf_mPlay);
+    def_native(f, "musicPause", nf_mPause);
+    def_native(f, "musicStop", nf_mStop);
+    def_native(f, "musicSeek", nf_mSeek);
+    def_native(f, "musicState", nf_mState);
     def_native(f, "webImagesReset", nf_bImgReset);
     def_native(f, "volume", nf_bVol);
     def_native(f, "setVolume", nf_bSetVol);

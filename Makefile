@@ -11,7 +11,7 @@ CFLAGS  := -m32 -march=i686 -mno-sse -mno-sse2 -mno-mmx -mfpmath=387 -O2 \
            -fno-asynchronous-unwind-tables -fno-exceptions -nostdlib -Wall -Wextra
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 
-KSRC    := kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c \
+KSRC    := kernel/music.c kernel/main.c kernel/lib.c kernel/video.c kernel/fs.c kernel/inflate.c \
            kernel/render.c kernel/player.c kernel/avm1.c kernel/ata.c kernel/net.c kernel/cdfs.c kernel/audio.c kernel/image.c kernel/textfield.c kernel/docs.c kernel/flv.c
 KOBJ    := $(patsubst kernel/%.c,build/%.o,$(KSRC) kernel/plat_pc.c)
 FILES   := $(wildcard swf/*.swf) $(wildcard files/*)
@@ -89,7 +89,7 @@ BYROBJ  := $(patsubst kernel/%.c,$(BYRDIR)/%.o,$(KSRC) kernel/plat_pc.c)
 BYRFONTS := --font apps/byrott/unifont.otf "Unifont" --font apps/byrott/DejaVuSansCondensed-Bold.ttf "DejaVu Sans Condensed Bold"
 # private/wallpapers: pictures that stay out of the public repository
 BYRWALL := $(sort $(wildcard apps/byrott/wallpapers/*.jpg) $(wildcard private/wallpapers/*.jpg))
-BYRART  := $(wildcard apps/byrott/art/icon_*.png) apps/byrott/art/logo_big.png apps/byrott/art/logo_mid.png \
+BYRART  := $(wildcard apps/byrott/art/icon_*.png) $(wildcard apps/byrott/art/avatar_*.png) apps/byrott/music/byrott-theme.mp3 apps/byrott/art/logo_big.png apps/byrott/art/logo_mid.png \
            apps/byrott/art/logo_small.png apps/byrott/art/logo_tiny.png apps/byrott/art/start_btn.png apps/byrott/art/web_offline.png
 
 $(BYRDIR)/%.o: kernel/%.c kernel/kernel.h kernel/swf.h kernel/audio.h | build
@@ -109,10 +109,11 @@ $(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/unifont.otf | b
 $(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/unifont.otf | build
 	mkdir -p $(BYRDIR)
 	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT" --fps 30
-$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/BallGame.swf $(BYRWALL) $(BYRART)
+$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Maze.swf build/apps/FlashNotepad.swf $(BYRWALL) $(BYRART)
 	cp build/FlashOS.iso $(BYRDIR)/flashos.iso
-	cp build/apps/BallGame.swf $(BYRDIR)/ballgame.swf
-	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/ballgame.swf $(BYRWALL) $(BYRART)
+	cp build/apps/Maze.swf $(BYRDIR)/store_maze.swf
+	cp build/apps/FlashNotepad.swf $(BYRDIR)/store_flashnotepad.swf
+	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/store_maze.swf $(BYRDIR)/store_flashnotepad.swf $(BYRWALL) $(BYRART)
 build/ByroTT.iso: build/mbr.bin build/loader.bin build/stage2.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin tools/mkiso.py
 	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin build/stage2.bin $@ \
 		--label BYROTT --file BYR.SWF=$(BYRDIR)/byr.swf

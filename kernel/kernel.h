@@ -79,6 +79,17 @@ int plat_kdown(int code);         /* is Flash key code held */
 void plat_mouse(int *x, int *y, int *buttons);
 void plat_mouse_set(int x, int y);
 int plat_wheel(void);
+/* music.c: an MP3 file streamed to the mixer */
+const char *music_open(const char *name);
+void music_stop(void);
+void music_forget(void);
+void music_pause(int p);
+void music_tick(void);
+int music_length(void);
+int music_position(void);
+int music_playing(void);
+int music_done(void);
+void music_seek(int sec);
 const char *plat_print(const u8 *d, u32 n);   /* LPT1: "ok" or why not */            /* wheel steps since the last call: + down, - up */
 void plat_flush_input(void);
 void plat_rtc(int *h, int *m, int *s, int *day, int *mon, int *year);
