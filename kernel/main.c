@@ -701,7 +701,7 @@ const char *byr_install(int disk) {
                      "The computer will start ByroTT from now on.",
                      "Your saved documents are kept.",
                      "You can uninstall it later in ByroTT's Settings.")) return "cancelled";
-    sys_box("Installing ByroTT...", "Please wait.", "", "");
+    sys_box("INSTALLING PLEASE DO NOT SHUT DOWN", "IT CAN POTENTIALLY BRICK YOUR COMPUTER!", "", "");
     return sys_install(d, box_progress) ? "ok" : "disk write failed";
 #endif
 }
@@ -721,7 +721,7 @@ const char *byr_uninstall(void) {
     if (!sys_confirm("ByroTT wants to uninstall itself.",
                      "The original FlashOS will be put back on the hard disk.",
                      "Your saved documents are kept.", "")) return "cancelled";
-    sys_box("Putting FlashOS back...", "Please wait.", "", "");
+    sys_box("Deleting... PLEASE DO NOT SHUT DOWN!", "Putting FlashOS back.", "", "");
     static u8 sec[512 * 16];
     for (u32 i = 0; i < need; i += 16) {
         u32 n = need - i < 16 ? need - i : 16;
@@ -758,7 +758,7 @@ static void play_windowed(const char *name) {
     }
     const char *err = NULL;
     swf_window = 1;
-    swf_window_title = name;
+    swf_window_title = !kstricmp(name, "ballgame.swf") ? "Ball Game v1.0" : name;
     swf_play(data, size, &err);
     swf_window = 0;
     if (err) {
@@ -783,6 +783,30 @@ static void byrott_loop(void) {
         byr_after_play();
         if (run_req[0]) { play_windowed(run_req); continue; }
         launch_arg[0] = 0;
+    }
+}
+
+/* ByroTT is installed but its files are gone (the mock-up's error screen) */
+static void byrott_missing(void) {
+    for (;;) {
+        video_fill(0, 0, scr_w, scr_h, 0xFF000000u);
+        int x = scr_w / 2 - 300, y = scr_h / 2 - 80;
+        text_at(x, y, "Byrott Is Not Found Or Installation", 0xFFFFFFFFu, 2);
+        text_at(x, y + 34, "Gone Wrong", 0xFFFFFFFFu, 2);
+        text_at(x, y + 68, "Please Re-Install it Again", 0xFFFFFFFFu, 2);
+        text_at(x + 50, y + 102, "Press Space for quick uninstall", 0xFFFFFFFFu, 2);
+        video_present(0, 0, scr_w, scr_h);
+        plat_flush_input();
+        int code = 0, down, ascii;
+        for (;;) if (plat_kevent(&code, &down, &ascii) && down && (code == 32 || code == 27)) break;
+        if (code == 27) return;                 /* Esc: the FlashOS terminal */
+        const char *r = byr_uninstall();
+        if (!kstricmp(r, "ok")) {
+            text_at(x, y + 160, "Installing... PLEASE DO NOT SHUT DOWN!!", 0xFFFFFFFFu, 2);
+            video_present(0, 0, scr_w, scr_h);
+            plat_sleep(1500);
+            plat_reboot();
+        }
     }
 }
 
@@ -812,6 +836,7 @@ void kmain(void) {
     if (installed()) {
         fast_logo();
         byrott_loop();            /* only returns if byrott.swf is missing */
+        byrott_missing();
         redraw_header();
     } else {
         boot_animation();

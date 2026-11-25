@@ -30,7 +30,7 @@ jobs:
           cp build/apps/FlashNotepad.swf .
           mkdir -p mazecd && cp build/apps/Maze.swf mazecd/
           genisoimage -quiet -V "Maze" -J -r -o Maze.iso mazecd
-          cp build/apps/Maze.swf . && cp build/apps/Catch.swf .
+          cp build/apps/Maze.swf . && cp build/apps/BallGame.swf .
           make build/ByroTT.iso
           cp build/ByroTT.iso .
 
@@ -91,7 +91,7 @@ jobs:
             cat audio-report.txt || true
             echo '```'
           } > notes.md
-          ASSETS="build/FlashOS.iso Flash-notepad.iso FlashNotepad.swf Maze.iso Maze.swf Catch.swf screenshots/maze_*.png ByroTT.iso screenshots/byr_*.png screenshots/notepad_*.png screenshots/notepad2_*.png screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png screenshots/hdd_03_no_install.png screenshots/net_01_net.png screenshots/net_02_get.png screenshots/net_03_web.png screenshots/net_04_play.png screenshots/net8139_02_get.png screenshots/gamecd_01_ls.png screenshots/audio_01_vol.png screenshots/audio_01b_snddiag.png screenshots/audio_01c_snddiag2.png screenshots/audio_02_features.png screenshots/gamecd_02_play.png"
+          ASSETS="build/FlashOS.iso Flash-notepad.iso FlashNotepad.swf Maze.iso Maze.swf BallGame.swf screenshots/maze_*.png ByroTT.iso screenshots/byr_*.png screenshots/notepad_*.png screenshots/notepad2_*.png screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png screenshots/hdd_03_no_install.png screenshots/net_01_net.png screenshots/net_02_get.png screenshots/net_03_web.png screenshots/net_04_play.png screenshots/net8139_02_get.png screenshots/gamecd_01_ls.png screenshots/audio_01_vol.png screenshots/audio_01b_snddiag.png screenshots/audio_01c_snddiag2.png screenshots/audio_02_features.png screenshots/gamecd_02_play.png"
           # every build is its own release, marked Latest; download links:
           #   https://github.com/<owner>/<repo>/releases/latest/download/<file>
           TAG="build-${GITHUB_RUN_NUMBER}"

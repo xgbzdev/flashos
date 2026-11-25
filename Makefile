@@ -68,10 +68,10 @@ build/apps/FlashNotepad.swf: apps/notepad/notepad.as tools/asc.py apps/notepad/C
 build/apps/Maze.swf: apps/maze/maze.as tools/asc.py apps/maze/PressStart2P-Regular.ttf | build
 	mkdir -p build/apps
 	$(PY) tools/asc.py $< $@ --font apps/maze/PressStart2P-Regular.ttf "Press Start 2P" --title "Maze 3D" --fps 30
-build/apps/Catch.swf: apps/catch/catch.as tools/asc.py apps/byrott/PressStart2P-Regular.ttf | build
+build/apps/BallGame.swf: apps/byrott/ballgame.as tools/asc.py apps/byrott/unifont.otf | build
 	mkdir -p build/apps
-	$(PY) tools/asc.py $< $@ --font apps/byrott/PressStart2P-Regular.ttf "Press Start 2P" --title "Catch" --size 800x600 --fps 30 --bg 204090
-apps: build/apps/FlashNotepad.swf build/apps/Maze.swf build/apps/Catch.swf
+	$(PY) tools/asc.py $< $@ --font apps/byrott/unifont.otf "Unifont" --title "Ball Game v1.0" --size 800x560 --fps 30 --bg 990000
+apps: build/apps/FlashNotepad.swf build/apps/Maze.swf build/apps/BallGame.swf
 .PHONY: apps
 
 build/flashfs.bin: tools/mkfs.py swf/bounce.swf swf/flashlogo.swf $(FILES) | build
@@ -85,12 +85,12 @@ build/FlashOS.iso: build/mbr.bin build/loader.bin build/stage2.bin build/flashkr
 # Byr.swf to install). Once installed it starts ByroTT directly.
 BYRDIR  := build/byr
 BYROBJ  := $(patsubst kernel/%.c,$(BYRDIR)/%.o,$(KSRC) kernel/plat_pc.c)
-BYRFONTS := --font apps/byrott/DejaVuSansCondensed.ttf "DejaVu Sans Condensed" --font apps/byrott/DejaVuSansCondensed-Bold.ttf "DejaVu Sans Condensed Bold" \
-            --font apps/byrott/DejaVuSansMono.ttf "DejaVu Sans Mono"
+# ByroTT uses one pixel font, GNU Unifont, like its Scratch mock-up
+BYRFONTS := --font apps/byrott/unifont.otf "Unifont" --font apps/byrott/DejaVuSansCondensed-Bold.ttf "DejaVu Sans Condensed Bold"
 # private/wallpapers: pictures that stay out of the public repository
 BYRWALL := $(sort $(wildcard apps/byrott/wallpapers/*.jpg) $(wildcard private/wallpapers/*.jpg))
 BYRART  := $(wildcard apps/byrott/art/icon_*.png) apps/byrott/art/logo_big.png apps/byrott/art/logo_mid.png \
-           apps/byrott/art/logo_small.png apps/byrott/art/logo_tiny.png
+           apps/byrott/art/logo_small.png apps/byrott/art/logo_tiny.png apps/byrott/art/start_btn.png apps/byrott/art/web_offline.png
 
 $(BYRDIR)/%.o: kernel/%.c kernel/kernel.h kernel/swf.h kernel/audio.h | build
 	mkdir -p $(BYRDIR)
@@ -103,16 +103,16 @@ $(BYRDIR)/flashkrn.elf: build/entry.o $(BYROBJ) kernel/linker.ld
 	@if nm $@ | grep -q ' U '; then nm $@ | grep ' U '; echo "undefined symbols"; exit 1; fi
 $(BYRDIR)/flashkrn.bin: $(BYRDIR)/flashkrn.elf
 	objcopy -O binary $< $@
-$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/PressStart2P-Regular.ttf | build
+$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/unifont.otf | build
 	mkdir -p $(BYRDIR)
-	$(PY) tools/asc.py $< $@ --font apps/byrott/PressStart2P-Regular.ttf "Press Start 2P" --title "ByroTT Setup" --fps 30
-$(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/DejaVuSansCondensed.ttf | build
+	$(PY) tools/asc.py $< $@ --font apps/byrott/unifont.otf "Unifont" --title "ByroTT Setup" --fps 30
+$(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/unifont.otf | build
 	mkdir -p $(BYRDIR)
 	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT" --fps 30
-$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Catch.swf $(BYRWALL) $(BYRART)
+$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/BallGame.swf $(BYRWALL) $(BYRART)
 	cp build/FlashOS.iso $(BYRDIR)/flashos.iso
-	cp build/apps/Catch.swf $(BYRDIR)/catch.swf
-	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/catch.swf $(BYRWALL) $(BYRART)
+	cp build/apps/BallGame.swf $(BYRDIR)/ballgame.swf
+	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/ballgame.swf $(BYRWALL) $(BYRART)
 build/ByroTT.iso: build/mbr.bin build/loader.bin build/stage2.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin tools/mkiso.py
 	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin build/stage2.bin $@ \
 		--label BYROTT --file BYR.SWF=$(BYRDIR)/byr.swf

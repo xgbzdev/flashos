@@ -211,22 +211,25 @@ Press Start 2P (SIL Open Font License).
    the ByroTT CD is still in the drive. There is no way to the FlashOS
    terminal while ByroTT is installed, and `Byr.swf` is hidden.
 
-ByroTT has 2000-style icons, grey 3D buttons, a taskbar and a Start menu.
-An app opens in a window on black: a title bar in the window colour, then a
-grey body. SWFs from the Terminal or Files play in the same kind of window.
-The logo is the original hand-drawn sketch (`apps/byrott/art/logo_sketch.png`);
-`tools/byrott_art.py` makes its sizes and the wallpapers. Startup has no
-animations: the FlashOS logo, then a plain "Loading..." screen. F12 does
-not close ByroTT (in a game window it still closes the game). The taskbar
-has a volume button; FlashOS's own volume keys and bar are off.
+ByroTT copies the look of its Scratch mock-up (`Byrott_1.sb3`): the pixel
+font GNU Unifont, an orange start button at the top left with a drop-down
+menu (Settings, Internet Navigator, Command Runner, Notepad, Volume, Restart,
+Shut Down), and File Manager and Ball Game V1.0 on the desktop. An app opens
+in a white window on black, with a thin title bar in the theme colour and a
+close box. SWFs from the Command Runner or File Manager play in the same kind
+of window. The icons are the mock-up's own drawings.
 
-* **Terminal** (white text) plays SWFs, one at a time.
-* **Files** covers the hard disk, CD, USB and system files.
-* **Internet** is an http-only web browser; its start page links FrogFind.
-* **Notepad**, a picture and video viewer, and **Catch** (a ball game) are included.
-* **Settings** changes the wallpaper, the window colour (cyan, blue, red,
-  green) and the cursor colour.
-* **Settings > Uninstall** writes the original FlashOS, which is stored
+* **Command Runner** (white text) plays SWFs, one at a time.
+* **File Manager** opens on three folders: Hard Disk (the files on the hard
+  disk, CD, USB and system), X Boot and Admin.
+* **Internet Navigator 1.0** is an http-only web browser; without a network
+  it asks you to connect your PC to a FlashRouter.
+* **Notepad**, a picture and video viewer, and **Ball Game v1.0** (dodge the
+  ball) are included.
+* **Settings**: click a row to change the pointer colour (white, black, red,
+  green), the windows theme (Default, Orange, Green, Blue, Byrott) or the
+  wallpaper.
+* **Settings > Delete Byrott** writes the original FlashOS, which is stored
   inside ByroTT, back to the disk. Saved files are kept, and `Byr.swf`
   comes back.
 

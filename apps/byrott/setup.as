@@ -1,18 +1,17 @@
 // ByroTT 1.0 Setup (Byr.swf)
 // Copyright (c) 2026 FlashOS. All rights reserved.
-// Font: Press Start 2P (SIL Open Font License).
+// Font: GNU Unifont (SIL Open Font License 1.1), like the Scratch mock-up.
 // A cyan panel on black, pixel text, keys: Space = next, Esc = back.
 
 var W = 1024, H = 768;
-var PIX = "Press Start 2P";
+var PIX = "Unifont";
 var INK = 0x000000, WHITE = 0xFFFFFF, C1 = 0x1EC8DC;
 var PX = 150, PY = 110, PW = 724, PH = 548;      // the panel
 var MIN_MB = 2048;                               // 2 GB
 
 function fmt(size, color, align) {
     var f = new TextFormat();
-    f.font = PIX; f.size = size; f.color = color; f.align = align ? align : "left";
-    f.leading = Math.round(size * 0.6);
+    f.font = PIX; f.size = size < 24 ? 16 : 32; f.color = color; f.align = align ? align : "left";
     return f;
 }
 function label(mc, name, depth, x, y, w, h, text, size, color, align) {
@@ -45,12 +44,12 @@ function newPage() {
     if (page) page.removeMovieClip();
     page = _root.createEmptyMovieClip("page", 10);
     next = null; back = null; tiles = [];
-    footR = label(page, "fr", 90, PX + 40, PY + PH - 56, PW - 70, 30, "", 16, INK, "right");
-    footL = label(page, "fl", 91, PX + 30, PY + PH - 52, 300, 30, "", 10, 0x30474A, "left");
+    footR = label(page, "fr", 90, PX + 40, PY + PH - 50, PW - 60, 40, "", 32, INK, "right");
+    footL = label(page, "fl", 91, PX + 20, PY + 14, 400, 24, "", 16, 0x30474A, "left");
     return page;
 }
-function heading(p, text) { return label(p, "h", 1, PX + 50, PY + 50, PW - 100, 150, text, 18, INK); }
-function body(p, y, text) { return label(p, "b", 2, PX + 50, y, PW - 100, 300, text, 12, INK); }
+function heading(p, text) { return label(p, "h", 1, PX + 50, PY + 50, PW - 80, 150, text, 32, INK); }
+function body(p, y, text) { return label(p, "b", 2, PX + 50, y, PW - 100, 300, text, 16, INK); }
 function logo(p, x, y, size, col) {
     var bm = FlashOS.loadBitmap(size > 140 ? "logo_big.png" : (size > 44 ? "logo_mid.png" : "logo_small.png"));
     var mc = p.createEmptyMovieClip("lg", 3);
@@ -64,7 +63,7 @@ function logo(p, x, y, size, col) {
 function welcome() {
     var p = newPage();
     logo(p, PX + 50, PY + 46, 128, INK);
-    label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Welcome to\nByroTT 1.0", 20, INK);
+    label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Welcome to\nByroTT 1.0", 32, INK);
     body(p, PY + 210, "This Setup will install ByroTT on your hard disk.\n\n" +
          "ByroTT is a desktop with a terminal for SWF games, files, the internet, notepad and settings.\n\n" +
          "You can uninstall it at any time in Settings: FlashOS comes back.");
@@ -83,7 +82,7 @@ function gbText(mb) {
 }
 function drives() {
     var p = newPage();
-    heading(p, "In What Drive do you want\nInstall ByroTT\n(Minimum Space Required is 2GB)");
+    heading(p, "In What Drive do you want\nInstall Byrott\n(Minimun Space Required is 2GB)");
     disks = FlashOS.disks ? FlashOS.disks() : [];
     tiles = [];
     sel = -1;
@@ -94,7 +93,7 @@ function drives() {
         tl.idx = i;
         tl.ok = disks[i].mb >= MIN_MB;
         tl.fr = tl.createEmptyMovieClip("fr", 1);
-        label(tl, "t", 2, 14, 64, 124, 120, letters.charAt(i) + "\n(" + gbText(disks[i].mb) + "\nGB FREE)", 13, tl.ok ? WHITE : 0x8A8A8A);
+        label(tl, "t", 2, 10, 56, 134, 120, letters.charAt(i) + "\n(" + gbText(disks[i].mb) + "\nGB FREE)", 32, tl.ok ? WHITE : 0x8A8A8A);
         tl.paint = function () {
             this.fr.clear();
             if (sel == this.idx) box(this.fr, -5, -5, 154, 226, WHITE);
@@ -141,19 +140,23 @@ function ready() {
 }
 function install() {
     var p = newPage();
-    heading(p, "Installing ByroTT...");
-    var r = FlashOS.install ? FlashOS.install(sel) : "this FlashOS cannot install other systems";
-    if (r == "ok") done();
-    else if (r == "cancelled") ready();
-    else failed(r);
+    heading(p, "INSTALLING PLEASE DO NOT\nSHUT DOWN IT CAN POTENTIALLY\nBRICK YOUR COMPUTER!");
+    next = null; back = null;
+    // let this page show first: the install itself stops everything else
+    setTimeout(function () {
+        var r = FlashOS.install ? FlashOS.install(sel) : "this FlashOS cannot install other systems";
+        if (r == "ok") done();
+        else if (r == "cancelled") ready();
+        else failed(r);
+    }, 200);
 }
 
 // 4. done
 function done() {
     var p = newPage();
     logo(p, PX + 50, PY + 46, 128, INK);
-    label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "ByroTT is\nInstalled!", 20, INK);
-    body(p, PY + 230, "The computer will restart and start ByroTT.\n\nYou can leave the CD in the drive.");
+    label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Done Restart", 32, INK);
+    body(p, PY + 230, "ByroTT is installed. The computer will restart and start ByroTT.\n\nYou can leave the CD in the drive.");
     footR.text = "Press Space to Restart";
     footL.text = "";
     next = function () { FlashOS.restart(); };

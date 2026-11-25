@@ -1,0 +1,6 @@
+GNU Unifont (unifont.otf, a subset of version 15.1.01)
+Copyright (C) 1998-2023 Roman Czyborra, Paul Hardy, Qianqian Fang, Andrew Miller,
+Johnnie Weaver, David Corbett, Nils Moskopp, Rebecca Bettencourt, et al.
+
+Dual license: SIL Open Font License version 1.1, and GNU GPL version 2 or
+later with the GNU Font Embedding Exception. https://unifoundry.com/unifont/

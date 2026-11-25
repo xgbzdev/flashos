@@ -26,23 +26,23 @@ u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
 int swf_window;
 const char *swf_window_title;
 int swf_locked;    /* ByroTT itself: F12 and Ctrl+Q do not close it */
-/* ByroTT 1.0 windows: on black, a bar in the window colour, a small black
- * gap, then a light grey body the movie plays in */
-#define WIN_X 32
-#define WIN_Y 14
-#define WIN_W 960
-#define WIN_BAR 40
-#define WIN_BODY_Y (WIN_Y + WIN_BAR + 6)
-#define WIN_BODY_H (754 - WIN_BODY_Y)
-#define WIN_XB_X (WIN_X + WIN_W - 46)
+/* ByroTT 1.0 windows, like its Scratch mock-up: on black, a thin bar in
+ * the theme colour with the title and a close box, then a white body */
+#define WIN_X 52
+#define WIN_Y 40
+#define WIN_W 920
+#define WIN_BAR 30
+#define WIN_BODY_Y (WIN_Y + WIN_BAR + 2)
+#define WIN_BODY_H (736 - WIN_BODY_Y)
+#define WIN_XB_X (WIN_X + WIN_W - 30)
 #define WIN_XB_Y (WIN_Y + 4)
 static void win_text(int x, int y, const char *s, u32 col) {
     const u8 *font = plat_font();
-    for (; *s; s++, x += 16) {
+    for (; *s; s++, x += 8) {
         const u8 *g = font + (u8)*s * 16;
         for (int r = 0; r < 16; r++)
             for (int b = 0; b < 8; b++)
-                if (g[r] & (0x80 >> b)) video_fill(x + b * 2, y + r * 2, 2, 2, col);
+                if (g[r] & (0x80 >> b)) video_fill(x + b, y + r, 1, 1, col);
     }
 }
 extern u32 byr_win_color;
@@ -52,14 +52,18 @@ static void win_chrome(void) {
     int lum = (int)((bar >> 16) & 255) * 3 + (int)((bar >> 8) & 255) * 6 + (int)(bar & 255);
     u32 ink = lum > 1300 ? 0xFF000000u : 0xFFFFFFFFu;
     video_fill(WIN_X, WIN_Y, WIN_W, WIN_BAR, bar);
-    video_fill(WIN_X, WIN_BODY_Y, WIN_W, WIN_BODY_H, 0xFFE4E4E4u);
-    char t[52];
-    kstrcpy(t, swf_window_title ? swf_window_title : "", 50);
-    win_text(WIN_X + 14, WIN_Y + 4, t, ink);
-    int bx = WIN_XB_X, by = WIN_XB_Y;
-    for (int i = 0; i < 20; i++) {
-        video_fill(bx + 10 + i, by + 6 + i, 3, 3, ink);
-        video_fill(bx + 29 - i, by + 6 + i, 3, 3, ink);
+    video_fill(WIN_X, WIN_BODY_Y, WIN_W, WIN_BODY_H, 0xFF000000u);            /* 2 px black frame */
+    video_fill(WIN_X + 2, WIN_BODY_Y + 2, WIN_W - 4, WIN_BODY_H - 4, 0xFFFFFFFFu);
+    char t[100];
+    kstrcpy(t, swf_window_title ? swf_window_title : "", 100);
+    win_text(WIN_X + 8, WIN_Y + 7, t, ink);
+    /* the close box: white, black frame, an X */
+    int bx = WIN_XB_X, by = WIN_XB_Y, sz = 22;
+    video_fill(bx, by, sz, sz, 0xFF000000u);
+    video_fill(bx + 2, by + 2, sz - 4, sz - 4, 0xFFFFFFFFu);
+    for (int i = 4; i < sz - 4; i++) {
+        video_fill(bx + i, by + i, 2, 2, 0xFF000000u);
+        video_fill(bx + sz - 2 - i, by + i, 2, 2, 0xFF000000u);
     }
 }
 #endif
@@ -1271,7 +1275,7 @@ static void handle_input(void) {
     }
     int is_down = mb & 1;
 #ifdef BYROTT
-    if (swf_window && is_down && !mouse_down && mx >= WIN_XB_X && mx < WIN_XB_X + 42 && my >= WIN_Y && my < WIN_Y + WIN_BAR) {
+    if (swf_window && is_down && !mouse_down && mx >= WIN_XB_X - 6 && mx < WIN_X + WIN_W && my >= WIN_Y && my < WIN_Y + WIN_BAR) {
         quit_requested = 1;
         return;
     }
