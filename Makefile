@@ -82,7 +82,7 @@ build/FlashOS.iso: build/mbr.bin build/loader.bin build/stage2.bin build/flashkr
 # Byr.swf to install). Once installed it starts ByroTT directly.
 BYRDIR  := build/byr
 BYROBJ  := $(patsubst kernel/%.c,$(BYRDIR)/%.o,$(KSRC) kernel/plat_pc.c)
-BYRFONTS := --font apps/byrott/Fredoka-Regular.ttf "Fredoka" --font apps/byrott/Fredoka-SemiBold.ttf "Fredoka SemiBold" \
+BYRFONTS := --font apps/byrott/DejaVuSansCondensed.ttf "DejaVu Sans Condensed" --font apps/byrott/DejaVuSansCondensed-Bold.ttf "DejaVu Sans Condensed Bold" \
             --font apps/byrott/DejaVuSansMono.ttf "DejaVu Sans Mono"
 # private/wallpapers: pictures that stay out of the public repository
 BYRWALL := $(sort $(wildcard apps/byrott/wallpapers/*.jpg) $(wildcard private/wallpapers/*.jpg))
@@ -100,10 +100,10 @@ $(BYRDIR)/flashkrn.elf: build/entry.o $(BYROBJ) kernel/linker.ld
 	@if nm $@ | grep -q ' U '; then nm $@ | grep ' U '; echo "undefined symbols"; exit 1; fi
 $(BYRDIR)/flashkrn.bin: $(BYRDIR)/flashkrn.elf
 	objcopy -O binary $< $@
-$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/Fredoka-Regular.ttf | build
+$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/DejaVuSansCondensed.ttf | build
 	mkdir -p $(BYRDIR)
 	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT Setup" --fps 30
-$(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/Fredoka-Regular.ttf | build
+$(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/DejaVuSansCondensed.ttf | build
 	mkdir -p $(BYRDIR)
 	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT" --fps 30
 $(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Maze.swf $(BYRWALL) $(BYRART)

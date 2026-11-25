@@ -1,9 +1,9 @@
 // ByroTT 1.0 - a bird themed desktop for FlashOS
 // Copyright (c) 2026 FlashOS. All rights reserved.
-// Fonts: Fredoka (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).
+// Fonts: DejaVu Sans Condensed and DejaVu Sans Mono (Bitstream Vera licence).
 
 var W = 1024, H = 768, BAR = 48;
-var FONT = "Fredoka", FONT_B = "Fredoka SemiBold", MONO = "DejaVu Sans Mono";
+var FONT = "DejaVu Sans Condensed", FONT_B = "DejaVu Sans Condensed Bold", MONO = "DejaVu Sans Mono";
 // dark, square look: apps open full screen on black
 var INK = 0xE6E6E6, GREY = 0x9A9A9A, WHITE = 0xFFFFFF, LIGHT = 0x161616;
 var PANEL = 0x202020, EDGE = 0x4A4A4A, FIELD = 0x141414;
@@ -830,7 +830,7 @@ function settingsPage(pg) {
             "System: FlashOS " + FlashOS.version + ", ByroTT edition\n" +
             "Memory free for apps: " + Math.round(FlashOS.memoryKB() / 1024) + " MB\n" +
             "Files: " + (FlashOS.storage() == "disk" ? "saved on the hard disk (" + Math.round(FlashOS.freeKB() / 1024) + " MB free)" : "kept in memory until restart") + "\n\n" +
-            "Fonts: Fredoka (SIL Open Font License), DejaVu Sans Mono.\n" +
+            "Fonts: DejaVu Sans Condensed, DejaVu Sans Mono.\n" +
             "Hold F8 while the computer starts to get the FlashOS terminal.";
     } else {
         label(c, "t", 1, 0, 0, 580, 30, "Uninstall ByroTT", 22, INK, true);

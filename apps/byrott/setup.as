@@ -2,7 +2,7 @@
 // Copyright (c) 2026 FlashOS. All rights reserved.
 
 var W = 1024, H = 768;
-var FONT = "Fredoka", FONT_B = "Fredoka SemiBold";
+var FONT = "DejaVu Sans Condensed", FONT_B = "DejaVu Sans Condensed Bold";
 var C1 = 0x1EC8DC, C2 = 0x0E9FB0, INK = 0x1C2B36, GREY = 0x6E7C86, WHITE = 0xFFFFFF;
 
 function fmt(size, color, bold, align) {

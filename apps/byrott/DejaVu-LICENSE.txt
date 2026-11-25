@@ -1,0 +1,3 @@
+ByroTT uses the DejaVu fonts (DejaVu Sans Condensed, DejaVu Sans Mono).
+They are free software under the Bitstream Vera licence with public domain changes:
+https://dejavu-fonts.github.io/License.html
