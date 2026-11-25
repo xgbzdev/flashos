@@ -513,9 +513,56 @@ class Code:
         return bytes(self.b)
 
 
+def analyse(body):
+    """locals declared in a function body; None if it must keep an activation object"""
+    names, ok = [], [True]
+
+    def walk(n):
+        if not ok[0]:
+            return
+        if isinstance(n, list):
+            for x in n:
+                walk(x)
+            return
+        if not isinstance(n, tuple) or not n:
+            return
+        tag = n[0]
+        if isinstance(tag, str):
+            if tag in ("func", "fdecl"):
+                ok[0] = False
+                return
+            if tag == "id" and n[1] == "arguments":
+                ok[0] = False
+                return
+            if tag == "var":
+                for name, init in n[1]:
+                    if name not in names:
+                        names.append(name)
+                    walk(init)
+                return
+            if tag == "forin":
+                if n[2] and n[1] not in names:
+                    names.append(n[1])
+                walk(n[3]); walk(n[4])
+                return
+            if tag == "obj":
+                for k, v in n[1]:
+                    walk(v)
+                return
+            for x in n[1:]:
+                walk(x)
+        else:
+            for x in n:
+                walk(x)
+
+    walk(body)
+    return names if ok[0] else None
+
+
 class Gen:
     def __init__(self):
         self.loops = []  # (break_label, continue_label)
+        self.regs = {}   # name -> register in the current function (DefineFunction2)
 
     def compile(self, stmts, in_func=False):
         code = Code()
@@ -536,13 +583,32 @@ class Gen:
 
     def function(self, name, params, body):
         saved_in = getattr(self, "in_func", False)
-        inner = self.compile(body, True)
+        saved_regs = self.regs
+        local = analyse(body)
+        if local is not None and len(params) + len(local) < 250:
+            regs = {}
+            for p in params + local:
+                if p not in regs:
+                    regs[p] = len(regs) + 1
+            self.regs = regs
+            inner = self.compile(body, True)
+            payload = latin1(name) + b"\x00" + struct.pack("<H", len(params))
+            payload += bytes([len(regs) + 1]) + struct.pack("<H", 0)
+            for p in params:
+                payload += bytes([regs[p]]) + latin1(p) + b"\x00"
+            payload += struct.pack("<H", len(inner))
+            op = 0x8E
+        else:
+            self.regs = {}
+            inner = self.compile(body, True)
+            payload = latin1(name) + b"\x00" + struct.pack("<H", len(params))
+            for p in params:
+                payload += latin1(p) + b"\x00"
+            payload += struct.pack("<H", len(inner))
+            op = 0x9B
         self.in_func = saved_in
-        payload = latin1(name) + b"\x00" + struct.pack("<H", len(params))
-        for p in params:
-            payload += latin1(p) + b"\x00"
-        payload += struct.pack("<H", len(inner))
-        self.c.op(0x9B, payload)
+        self.regs = saved_regs
+        self.c.op(op, payload)
         self.c.b += inner
 
     # ---- statements
@@ -562,6 +628,12 @@ class Gen:
             self.function(s[1], s[2], s[3])
         elif k == "var":
             for name, init in s[1]:
+                if name in self.regs:
+                    if init is not None:
+                        self.ex(init)
+                        c.op(0x87, bytes([self.regs[name]]))
+                        c.op(0x17)
+                    continue
                 if init is None:
                     if self.in_func:
                         c.push(name)
@@ -633,8 +705,13 @@ class Gen:
             c.push(("null",))
             c.op(0x49)
             c.jump(done, True)
-            c.push(var, ("reg", 0))
-            c.op(0x3C if (isvar and self.in_func) else 0x1D)
+            if var in self.regs:
+                c.push(("reg", 0))
+                c.op(0x87, bytes([self.regs[var]]))
+                c.op(0x17)
+            else:
+                c.push(var, ("reg", 0))
+                c.op(0x3C if (isvar and self.in_func) else 0x1D)
             # break inside for-in must drain the remaining names
             self.loops.append((end, top))
             self.stmt(body)
@@ -719,7 +796,12 @@ class Gen:
                 self.ex(value)
                 c.ops(BIN[op[:-1]])
 
-        if target[0] == "id":
+        if target[0] == "id" and target[1] in self.regs:
+            val()
+            c.op(0x87, bytes([self.regs[target[1]]]))
+            if not want:
+                c.op(0x17)
+        elif target[0] == "id":
             if want:
                 val()
                 c.op(0x4C)
@@ -754,6 +836,17 @@ class Gen:
         code = 0x50 if op == "++" else 0x51
         if target[0] not in ("id", "mem", "idx"):
             raise SyntaxError("cannot increment this")
+        if target[0] == "id" and target[1] in self.regs:
+            r = self.regs[target[1]]
+            if want and post:
+                c.push(("reg", r))
+                c.op(0x4A)
+            c.push(("reg", r))
+            c.op(code)
+            c.op(0x87, bytes([r]))
+            if not (want and not post):
+                c.op(0x17)
+            return
         if want and post:
             self.get(target)
             c.op(0x4A)  # value before
@@ -801,8 +894,11 @@ class Gen:
             c.push("this")
             c.op(0x1C)
         elif k == "id":
-            c.push(e[1])
-            c.op(0x1C)
+            if e[1] in self.regs:
+                c.push(("reg", self.regs[e[1]]))
+            else:
+                c.push(e[1])
+                c.op(0x1C)
         elif k in ("mem", "idx"):
             self.get(e)
         elif k == "arr":

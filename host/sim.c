@@ -60,8 +60,8 @@ static void advance(u32 ms) {
         e->done = 1;
         if (!strcmp(e->kind, "shot")) shot(e->text);
         else if (!strcmp(e->kind, "end")) {
-            extern u64 host_render_ns, host_frames;
-            if (host_frames) printf("  render: %llu frames, %.2f ms per frame\n", (unsigned long long)host_frames, host_render_ns / 1e6 / host_frames);
+            extern u64 host_render_ns, host_frames, host_as_ns;
+            if (host_frames) printf("  render: %llu frames, %.2f ms per frame, ActionScript %.2f ms per frame\n", (unsigned long long)host_frames, host_render_ns / 1e6 / host_frames, host_as_ns / 1e6 / host_frames);
             printf("  [%6u ms] end\n", now);
             exit(0);
         }
@@ -87,8 +87,8 @@ static void advance(u32 ms) {
         } else if (!strcmp(e->kind, "ku")) {
             kev(atoi(e->text), 0, 0);
         } else if (!strcmp(e->kind, "reset")) { /* restart render statistics */
-            extern u64 host_render_ns, host_frames;
-            host_render_ns = host_frames = 0;
+            extern u64 host_render_ns, host_frames, host_as_ns;
+            host_render_ns = host_frames = host_as_ns = 0;
         } else if (!strcmp(e->kind, "mouse")) {
             sscanf(e->text, "%d %d", &mx, &my);
         } else if (!strcmp(e->kind, "mdown")) mb = 1;

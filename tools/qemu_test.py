@@ -29,6 +29,8 @@ elif mode == "install":   # CD + blank IDE disk + FAT USB stick
 elif mode == "audio":    # boot CD + test CD, AC'97 recorded to a WAV file
     media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3",
              "-boot", "d", "-audiodev", f"wav,id=snd0,path={extra[1]}", "-device", "AC97,audiodev=snd0"]
+elif mode == "maze":     # boot CD + the Maze CD
+    media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3", "-boot", "d"]
 elif mode == "gamecd":   # boot CD + a second, data-only ISO with games
     media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3", "-boot", "d"]
 elif mode in ("net", "net8139"):
@@ -171,6 +173,28 @@ if mode == "notepad2":   # after a restart: the saved file is still on the disk
     cmd("sendkey spc")
     time.sleep(6)
     shot("04_video")
+    cmd("quit")
+    qemu.wait(timeout=10)
+    sys.exit(0)
+
+if mode == "maze":
+    time.sleep(10)
+    type_text("maze\n")
+    time.sleep(6)
+    shot("01_title")
+    cmd("sendkey ret")
+    time.sleep(1.5)
+    cmd("sendkey up 1500")
+    time.sleep(2)
+    shot("02_play")
+    cmd("sendkey esc")
+    time.sleep(1)
+    shot("03_pause")
+    cmd("sendkey q")
+    time.sleep(1)
+    cmd("sendkey 0")
+    time.sleep(20)
+    shot("04_demo")
     cmd("quit")
     qemu.wait(timeout=10)
     sys.exit(0)

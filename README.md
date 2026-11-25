@@ -185,6 +185,19 @@ installed (from 16 MB in; reinstalling keeps it). When FlashOS runs from a CD,
 saved files stay in memory until restart. CDs and USB sticks are read-only;
 FlashOS now also loads `.txt .jpg .jpeg .png .gif .bmp .flv` files from them.
 
+## Maze 3D
+
+`apps/maze/` is a first-person 3D maze game, published as **`Maze.iso`**.
+Find the green EXIT door in 5 levels: Brick Cellar, Stone Halls, Wood Cabin,
+Ice Caves and Crystal Core. Each level is bigger than the one before and has
+gems to collect. Insert the CD and type `maze`.
+
+Arrows or W/S walk, Left/Right turn, A/D step sideways, Shift runs, M shows
+the map, Esc pauses. On the title screen 1–5 picks a level and 0 plays a demo.
+It is a ray caster written in ActionScript that draws into a 256 × 160
+BitmapData with `BitmapData.draw`, shown 4× for a chunky pixel look. Font:
+Press Start 2P (SIL Open Font License).
+
 ### Writing your own apps
 
 `tools/asc.py` compiles ActionScript 1.0 into a SWF. It can embed a TrueType
@@ -206,7 +219,7 @@ Besides the standard AS1/AS2 classes, FlashOS apps can use:
 | `FlashOS.openVideo(name)` | `.flv` video: `play() pause() stop() seek(s) close()`, `time duration playing width height bitmap` |
 | `FlashOS.getClipboard()`, `System.setClipboard(s)` | clipboard |
 | `FlashOS.exit()` | back to the prompt |
-| `flash.display.BitmapData` | `fillRect setPixel(32) getPixel(32) floodFill copyPixels clone dispose`, plus `drawLine(x0, y0, x1, y1, colour, size)` |
+| `flash.display.BitmapData` | `fillRect setPixel(32) getPixel(32) floodFill copyPixels draw(bitmap, matrix, colorTransform, null, clipRect) clone dispose`, plus `drawLine(x0, y0, x1, y1, colour, size)`; `flash.geom.Matrix`, `ColorTransform`, `Rectangle`, `Point` |
 | `clip.attachBitmap(bmp, depth, snap, smooth)` | show a BitmapData |
 | text fields | `multiline wordWrap embedFonts border background scroll maxscroll`, `TextFormat` (font, size, colour, align), `replaceSel`, `Selection.setSelection`, `copy() cut() paste() undo() selectAll()` |
 

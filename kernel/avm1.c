@@ -591,6 +591,12 @@ static val get_prop_val(obj *o, val self, const char *name) {
 }
 
 static val get_member(val ov, val namev) {
+    /* fast path: array[number] without making a string */
+    if (ov.t == V_OBJ && ov.u.o->kind == O_ARRAY && namev.t == V_NUM) {
+        num d = namev.u.n;
+        int i = (int)d;
+        if ((num)i == d && i >= 0) return i < ov.u.o->alen ? ov.u.o->arr[i] : vundef();
+    }
     const char *name = namev.t == V_STR ? namev.u.s : as_tostring(namev);
     if (ov.t == V_STR) {
         if (!kstricmp(name, "length")) {
@@ -653,6 +659,11 @@ static val get_member(val ov, val namev) {
 
 static void set_member(val ov, val namev, val v) {
     if (ov.t != V_OBJ) return;
+    if (ov.u.o->kind == O_ARRAY && namev.t == V_NUM) {
+        num d = namev.u.n;
+        int i = (int)d;
+        if ((num)i == d && i >= 0 && i < 10000000) { arr_set(ov.u.o, i, v); return; }
+    }
     obj *o = ov.u.o;
     const char *name = namev.t == V_STR ? namev.u.s : as_tostring(namev);
     if (o->kind == O_CLIP && o->clip) {
@@ -2800,6 +2811,102 @@ static val nf_bmCopyPixels(ctx *c, val th, val *a, int n) {
     }
     return vundef();
 }
+/* BitmapData.draw(source BitmapData, matrix, colorTransform, blendMode, clipRect, smoothing) */
+static num fld(val o, const char *n, num def) {
+    if (o.t != V_OBJ) return def;
+    val v = get_member(o, vstr(n));
+    return v.t == V_NUM ? v.u.n : def;
+}
+static val nf_bmDraw(ctx *c, val th, val *a, int n) {
+    (void)c;
+    bdata *d = bd_of(th), *src = bd_of(ARG(0));
+    if (!d || !src) return vundef();
+    bitmap *D = d->bm, *S = src->bm;
+    val mv = ARG(1), cv = ARG(2), rv = ARG(4);
+    float ma = (float)fld(mv, "a", 1), mb = (float)fld(mv, "b", 0), mc = (float)fld(mv, "c", 0), md = (float)fld(mv, "d", 1);
+    float tx = (float)fld(mv, "tx", 0), ty = (float)fld(mv, "ty", 0);
+    int hasct = cv.t == V_OBJ;
+    float rm = 1, gm = 1, bm = 1, am = 1, ro = 0, go = 0, bo = 0, ao = 0;
+    if (hasct) {
+        rm = (float)fld(cv, "redMultiplier", 1); gm = (float)fld(cv, "greenMultiplier", 1);
+        bm = (float)fld(cv, "blueMultiplier", 1); am = (float)fld(cv, "alphaMultiplier", 1);
+        ro = (float)fld(cv, "redOffset", 0); go = (float)fld(cv, "greenOffset", 0);
+        bo = (float)fld(cv, "blueOffset", 0); ao = (float)fld(cv, "alphaOffset", 0);
+    }
+    /* destination box: transformed source corners, clipped */
+    float W = (float)S->w, H = (float)S->h;
+    float xs[4] = {tx, ma * W + tx, mc * H + tx, ma * W + mc * H + tx};
+    float ys[4] = {ty, mb * W + ty, md * H + ty, mb * W + md * H + ty};
+    float x0 = xs[0], x1 = xs[0], y0 = ys[0], y1 = ys[0];
+    for (int i = 1; i < 4; i++) {
+        if (xs[i] < x0) x0 = xs[i];
+        if (xs[i] > x1) x1 = xs[i];
+        if (ys[i] < y0) y0 = ys[i];
+        if (ys[i] > y1) y1 = ys[i];
+    }
+    int ix0 = kfloor(x0), iy0 = kfloor(y0), ix1 = kfloor(x1 + 0.999f), iy1 = kfloor(y1 + 0.999f);
+    if (rv.t == V_OBJ) {
+        int cx0 = (int)fld(rv, "x", 0), cy0 = (int)fld(rv, "y", 0);
+        int cx1 = cx0 + (int)fld(rv, "width", 0), cy1 = cy0 + (int)fld(rv, "height", 0);
+        if (ix0 < cx0) ix0 = cx0;
+        if (iy0 < cy0) iy0 = cy0;
+        if (ix1 > cx1) ix1 = cx1;
+        if (iy1 > cy1) iy1 = cy1;
+    }
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > D->w) ix1 = D->w;
+    if (iy1 > D->h) iy1 = D->h;
+    if (ix0 >= ix1 || iy0 >= iy1) return vundef();
+    float det = ma * md - mb * mc;
+    if (det == 0) return vundef();
+    float ia = md / det, ib = -mb / det, ic = -mc / det, id = ma / det;
+    int ctid = !hasct || (rm == 1 && gm == 1 && bm == 1 && am == 1 && ro == 0 && go == 0 && bo == 0 && ao == 0);
+    int rmi = (int)(rm * 256), gmi = (int)(gm * 256), bmi = (int)(bm * 256), ami = (int)(am * 256);
+    int roi = (int)ro, goi = (int)go, boi = (int)bo, aoi = (int)ao;
+    for (int y = iy0; y < iy1; y++) {
+        float fx = ix0 + 0.5f - tx, fy = y + 0.5f - ty;
+        float u = ia * fx + ic * fy, v = ib * fx + id * fy;
+        u32 *row = D->px + (u32)y * D->w;
+        for (int x = ix0; x < ix1; x++, u += ia, v += ib) {
+            if (u < 0 || v < 0 || u >= W || v >= H) continue;
+            u32 p = S->px[(int)v * S->w + (int)u];
+            if (!ctid) {
+                int r = (int)((p >> 16) & 255) * rmi / 256 + roi, g = (int)((p >> 8) & 255) * gmi / 256 + goi;
+                int b = (int)(p & 255) * bmi / 256 + boi, al = (int)(p >> 24) * ami / 256 + aoi;
+                r = r < 0 ? 0 : r > 255 ? 255 : r; g = g < 0 ? 0 : g > 255 ? 255 : g;
+                b = b < 0 ? 0 : b > 255 ? 255 : b; al = al < 0 ? 0 : al > 255 ? 255 : al;
+                p = ((u32)al << 24) | ((u32)r << 16) | ((u32)g << 8) | (u32)b;
+            }
+            u32 al = p >> 24;
+            if (al == 255) { row[x] = d->transparent ? p : (p | 0xFF000000u); continue; }
+            if (!al) continue;
+            u32 q = row[x], ia2 = 255 - al;
+            u32 r = (((p >> 16) & 255) * al + ((q >> 16) & 255) * ia2) / 255;
+            u32 g = (((p >> 8) & 255) * al + ((q >> 8) & 255) * ia2) / 255;
+            u32 b = ((p & 255) * al + (q & 255) * ia2) / 255;
+            u32 oa = d->transparent ? al + (q >> 24) * ia2 / 255 : 255;
+            row[x] = (oa << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+    return vundef();
+}
+static val nf_Matrix(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    static const char *nm[] = {"a", "b", "c", "d", "tx", "ty"};
+    static const num def[] = {1, 0, 0, 1, 0, 0};
+    for (int i = 0; i < 6; i++) set_own(th.u.o, nm[i], vnum(i < n ? to_num(a[i]) : def[i]));
+    return th;
+}
+static val nf_ColorTransform(ctx *c, val th, val *a, int n) {
+    (void)c;
+    if (th.t != V_OBJ) return vundef();
+    static const char *nm[] = {"redMultiplier", "greenMultiplier", "blueMultiplier", "alphaMultiplier",
+                               "redOffset", "greenOffset", "blueOffset", "alphaOffset"};
+    for (int i = 0; i < 8; i++) set_own(th.u.o, nm[i], vnum(i < n ? to_num(a[i]) : (i < 4 ? 1 : 0)));
+    return th;
+}
 static val nf_attachBitmap(ctx *c, val th, val *a, int n) {
     (void)c;
     THIS_CLIP
@@ -3026,6 +3133,7 @@ static void flashos_api(void) {
     def_native(bmd_proto, "dispose", nf_bmDispose);
     def_native(bmd_proto, "clone", nf_bmClone);
     def_native(bmd_proto, "copyPixels", nf_bmCopyPixels);
+    def_native(bmd_proto, "draw", nf_bmDraw);
     obj *rect = mk_class("Rectangle", nf_Rect, NULL);
     obj *pt = mk_class("Point", nf_Point, NULL);
     obj *flash = new_obj(obj_proto), *disp = new_obj(obj_proto), *geom = new_obj(obj_proto);
@@ -3036,6 +3144,8 @@ static void flashos_api(void) {
     set_hidden(disp, "BitmapData", vobj(ctor));
     set_hidden(geom, "Rectangle", vobj(rect));
     set_hidden(geom, "Point", vobj(pt));
+    set_hidden(geom, "Matrix", vobj(mk_class("Matrix", nf_Matrix, NULL)));
+    set_hidden(geom, "ColorTransform", vobj(mk_class("ColorTransform", nf_ColorTransform, NULL)));
     def_native(clip_proto, "attachBitmap", nf_attachBitmap);
 }
 

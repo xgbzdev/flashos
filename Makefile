@@ -65,7 +65,10 @@ APPFONTS := --font apps/notepad/ComicNeue-Regular.ttf "Comic Neue" --font apps/n
 build/apps/FlashNotepad.swf: apps/notepad/notepad.as tools/asc.py apps/notepad/ComicNeue-Regular.ttf apps/notepad/ComicNeue-Bold.ttf | build
 	mkdir -p build/apps
 	$(PY) tools/asc.py $< $@ $(APPFONTS) --title "Flash Notepad"
-apps: build/apps/FlashNotepad.swf
+build/apps/Maze.swf: apps/maze/maze.as tools/asc.py apps/maze/PressStart2P-Regular.ttf | build
+	mkdir -p build/apps
+	$(PY) tools/asc.py $< $@ --font apps/maze/PressStart2P-Regular.ttf "Press Start 2P" --title "Maze 3D" --fps 30
+apps: build/apps/FlashNotepad.swf build/apps/Maze.swf
 .PHONY: apps
 
 build/flashfs.bin: tools/mkfs.py swf/bounce.swf swf/flashlogo.swf $(FILES) | build

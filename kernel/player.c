@@ -25,7 +25,7 @@ u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
 #include <time.h>
 #include <stdio.h>
 static u64 host_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (u64)t.tv_sec * 1000000000ull + t.tv_nsec; }
-u64 host_render_ns, host_frames;
+u64 host_render_ns, host_frames, host_as_ns;
 #endif
 
 void *amalloc(u32 n) {
@@ -1377,7 +1377,13 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         while (!quit_requested) {
             handle_input();
             if (quit_requested) break;
+#ifdef HOSTED
+            u64 at0 = host_ns();
+#endif
             if (!first) advance_all();
+#ifdef HOSTED
+            host_as_ns += host_ns() - at0;
+#endif
             first = 0;
             flv_tick_all();
             frac += frame_us;
