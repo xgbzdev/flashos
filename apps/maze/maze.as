@@ -454,7 +454,7 @@ var sub = text(over, "st", 4, 0, 0, 1024, 40, 24, 0xFFFFFF, "center");
 var body = text(over, "bd", 5, 112, 0, 800, 300, 16, 0xC0D0E0, "center");
 body.multiline = true;
 body.wordWrap = true;
-var blink = text(over, "bl", 6, 0, 660, 1024, 40, 16, 0xFFD040, "center");
+var blink = text(over, "bl", 6, 0, 584, 1024, 40, 16, 0xFFD040, "center");
 
 function showOverlay(title, subtitle, info, prompt, titleY) {
     over._visible = true;
