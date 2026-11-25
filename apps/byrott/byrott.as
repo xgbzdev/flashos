@@ -16,7 +16,7 @@ var COLOR_NAMES = ["cyan", "blue", "red", "green"];
 var CURSORS = ["cyan", "blue", "red", "green", "yellow", "pink", "white", "black"];
 var CURSOR_COLS = {cyan: [0x1EC8DC, 0x000000], blue: [0x2F6FE0, 0xFFFFFF], red: [0xE0443C, 0xFFFFFF], green: [0x2FAE5B, 0x000000],
                    yellow: [0xFFD21E, 0x000000], pink: [0xFF6EC7, 0x000000], white: [0xFFFFFF, 0x000000], black: [0x000000, 0xFFFFFF]};
-var cfg = {wallpaper: "pyramids.jpg", color: "cyan", cursor: "cyan", volume: "80", muted: "0"};
+var cfg = {wallpaper: "pyramids.jpg", color: "cyan", cursor: "white", volume: "80", muted: "0"};
 var DEFAULT_WALL = "pyramids.jpg";
 var C1, C2, C3;            // window colour: main, dark, pale
 
@@ -30,7 +30,7 @@ function loadCfg() {
         }
     }
     if (!COLORS[cfg.color]) cfg.color = "cyan";
-    if (!CURSOR_COLS[cfg.cursor]) cfg.cursor = "cyan";
+    if (!CURSOR_COLS[cfg.cursor]) cfg.cursor = "white";
     applyColor();
 }
 function saveCfg() {
@@ -545,7 +545,7 @@ function openStart() {
 var cursorGfx = cursorClip.createEmptyMovieClip("g", 1);
 function drawCursor(kind, g) {
     g.clear();
-    var c = CURSOR_COLS[kind] ? CURSOR_COLS[kind] : CURSOR_COLS.cyan;
+    var c = CURSOR_COLS[kind] ? CURSOR_COLS[kind] : CURSOR_COLS.white;
     g.lineStyle(1.5, c[1], 100);
     g.beginFill(c[0], 100);
     g.moveTo(0, 0); g.lineTo(0, 20); g.lineTo(5, 15); g.lineTo(9, 23); g.lineTo(12, 22);
@@ -557,7 +557,7 @@ function applyCursor() {
     Mouse.hide();
     cursorClip._visible = true;
     drawCursor(cfg.cursor, cursorGfx);
-    var c = CURSOR_COLS[cfg.cursor] ? CURSOR_COLS[cfg.cursor] : CURSOR_COLS.cyan;
+    var c = CURSOR_COLS[cfg.cursor] ? CURSOR_COLS[cfg.cursor] : CURSOR_COLS.white;
     if (FlashOS.cursorColor) FlashOS.cursorColor(c[0], c[1]);   // the pointer of SWFs played in a window
 }
 var mouseL = {};
@@ -1000,7 +1000,7 @@ function uninstallNow() {
 // ================================================================ INTERNET
 var WEB_W = 900, WEB_VIEW = 470;
 var START_PAGE = "<title>ByroTT start page</title><h1>Welcome to the Internet</h1>" +
-    "<p>ByroTT can open <b>http://</b> web sites. Most of today's web uses https://, so try these sites, made for old computers:</p>" +
+
     "<form action=\"http://frogfind.com/\"><p><b>Search the web with FrogFind:</b> <input name=\"q\"> <input type=\"submit\" value=\"Search\"></p></form>" +
     "<ul><li><a href=\"http://frogfind.com/\">FrogFind</a> - a search engine that makes modern pages simple</li>" +
     "<li><a href=\"http://68k.news/\">68k.news</a> - today's news for vintage computers</li>" +
@@ -1408,7 +1408,11 @@ function startDesktop() {
 // loading screen: "Loading..." on black, then the desktop (no animation)
 var sp = splash;
 box(sp, 0, 0, W, H, 0x000000, 0, 0, 0);
-label(sp, "t", 2, 0, Math.round(H / 2) - 34, W, 70, "Loading...", 44, WHITE, true, "center");
+// tall, narrow white letters in the middle, like an old console
+var spC = sp.createEmptyMovieClip("lt", 2);
+var spT = label(spC, "t", 1, 0, 0, 640, 120, "Loading...", 84, WHITE, true, "center");
+spC._xscale = 78; spC._yscale = 125;
+spC._x = Math.round((W - 640 * 0.78) / 2); spC._y = Math.round(H / 2 - 70);
 sp.onPress = function () {};
 sp.useHandCursor = false;
 cursorClip._visible = false;
