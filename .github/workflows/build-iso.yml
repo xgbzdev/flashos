@@ -95,7 +95,7 @@ jobs:
           # every build is its own release, marked Latest; download links:
           #   https://github.com/<owner>/<repo>/releases/latest/download/<file>
           TAG="build-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" $ASSETS --title "FlashOS + ByroTT 1.0 (build ${GITHUB_RUN_NUMBER})" --notes-file notes.md --latest
+          gh release create "$TAG" $ASSETS --title "FlashOS + ByroTT 2.0 (build ${GITHUB_RUN_NUMBER})" --notes-file notes.md --latest
           # tidy up: the old "latest" release and builds older than the last 3 (GitHub may refuse; that is fine)
           gh release delete latest --yes --cleanup-tag || true
           for t in $(gh release list --limit 50 --json tagName -q '.[].tagName' | grep '^build-' | sort -t- -k2 -n -r | tail -n +4); do

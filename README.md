@@ -198,9 +198,9 @@ It is a ray caster written in ActionScript that draws into a 256 × 160
 BitmapData with `BitmapData.draw`, shown 4× for a chunky pixel look. Font:
 Press Start 2P (SIL Open Font License).
 
-## ByroTT 1.0
+## ByroTT 2.0
 
-**`ByroTT.iso`** holds ByroTT 1.0 (stable), a desktop made in Flash with a
+**`ByroTT.iso`** holds ByroTT 2.0, a desktop made in Flash with a
 2000s look, plus a special edition of FlashOS that starts it.
 
 1. Start the computer from `ByroTT.iso`. It looks like the normal FlashOS.
@@ -213,7 +213,7 @@ Press Start 2P (SIL Open Font License).
 
 ByroTT copies the look of its Scratch mock-up (`Byrott_1.sb3`): the pixel
 font GNU Unifont, an orange start button at the top left with a drop-down
-menu (Settings, Internet Navigator, Command Runner, Notepad, Volume, Restart,
+menu (Settings, Internet Navigator, Command Runner, Notepad, Paint, Volume, Restart,
 Shut Down), and File Manager and Ball Game V1.0 on the desktop. An app opens
 in a white window on black, with a thin title bar in the theme colour and a
 close box. SWFs from the Command Runner or File Manager play in the same kind
@@ -222,10 +222,20 @@ of window. The icons are the mock-up's own drawings.
 * **Command Runner** (white text) plays SWFs, one at a time.
 * **File Manager** opens on three folders: Hard Disk (the files on the hard
   disk, CD, USB and system), X Boot and Admin.
-* **Internet Navigator 1.0** is an http-only web browser; without a network
-  it asks you to connect your PC to a FlashRouter.
-* **Notepad**, a picture and video viewer, and **Ball Game v1.0** (dodge the
-  ball) are included.
+* **Internet Navigator 2.0** is an http-only web browser that also shows
+  pictures (http only, up to 12 per page), with +Mark, Bookmarks and History
+  (saved on the disk). Without a network it asks you to connect your PC to a
+  FlashRouter.
+* **Notepad**, **Paint** (pencil, brush, eraser, line, box, fill, 16
+  colours, undo; saves .bmp pictures and can make one your wallpaper), a
+  picture and video viewer (with Edit in Paint), and **Ball Game v2.0**:
+  dodge the balls, the level goes up every 15 seconds, catch the S (shield),
+  T (slow time) and W (wide bar) power-ups; the best 5 scores are saved.
+* **Clock and calendar** at the top right of the desktop; click the clock
+  for the month (with < and > to change it).
+* **Admin password**: set it in Settings. File Manager > Admin then asks for
+  it before showing the Private Folder. Hard Disk > Make private moves a
+  file there (and Make public moves it back).
 * **Settings**: click a row to change the pointer colour (white, black, red,
   green), the windows theme (Default, Orange, Green, Blue, Byrott) or the
   wallpaper.

@@ -1,4 +1,4 @@
-// ByroTT 1.0 - made to look like its Scratch mock-up (Byrott_1.sb3)
+// ByroTT 2.0 - made to look like its Scratch mock-up (Byrott_1.sb3)
 // Copyright (c) 2026 FlashOS. All rights reserved.
 // Fonts: GNU Unifont (SIL Open Font License 1.1); DejaVu Sans Condensed Bold
 // for the Loading screen (Bitstream Vera licence).
@@ -18,7 +18,7 @@ var THEME_NAMES = ["default", "orange", "green", "blue", "byrott"];
 var CURSORS = ["white", "black", "red", "green"];
 var CURSOR_COLS = {white: [0xFFFFFF, 0x000000], black: [0x000000, 0xFFFFFF], red: [0xFF2020, 0xFFFFFF], green: [0x20E040, 0xFFFFFF]};
 var CURSOR_NAMES = {white: "White", black: "Black", red: "Red", green: "Green"};
-var cfg = {wallpaper: "pyramids-planet.jpg", theme: "default", cursor: "white", volume: "80", muted: "0"};
+var cfg = {wallpaper: "pyramids-planet.jpg", theme: "default", cursor: "white", volume: "80", muted: "0", pass: ""};
 var DEFAULT_WALL = "pyramids-planet.jpg";
 var C1, C2, C3;            // window theme: bar, bar fade, pale (selections)
 
@@ -37,7 +37,7 @@ function loadCfg() {
 }
 function saveCfg() {
     FlashOS.write("byrott.cfg", "wallpaper=" + cfg.wallpaper + "\ntheme=" + cfg.theme + "\ncursor=" + cfg.cursor +
-                  "\nvolume=" + cfg.volume + "\nmuted=" + cfg.muted + "\n");
+                  "\nvolume=" + cfg.volume + "\nmuted=" + cfg.muted + "\npass=" + cfg.pass + "\n");
 }
 function mix(a, b, t) {
     var c = 0, sh = 16;
@@ -251,6 +251,7 @@ function makeWindow(id, title, ww, hh, dark, onClose) {
     if (curApp && curApp.id == id) return null;
     if (curApp) closeWindow(curApp);
     closeMenu();
+    closeCalendar();
     var w = winLayer.createEmptyMovieClip("w_" + id, ++winDepth);
     w.id = id; w.w = ww; w.h = hh; w.title = title; w.onCloseFn = onClose;
     var ow = ww + WPAD * 2, oh = WBAR + WGAP + hh + WPAD * 2;
@@ -331,15 +332,16 @@ function systemWallpapers() {
 
 // ---------------------------------------------------------------- desktop
 // like the mock-up: the start button at the top left, the icons under it
-var APPS = [["files", "File Manager"], ["ball", "Ball Game V1.0"]];
+var APPS = [["files", "File Manager"], ["ball", "Ball Game V2.0"]];
 // the start menu
-var MENU_APPS = [["settings", "Settings"], ["web", "Internet\n Navigator"], ["term", "Command\nRunner\n(FlashOS)"], ["notepad", "Notepad"]];
+var MENU_APPS = [["settings", "Settings"], ["web", "Internet\n Navigator"], ["term", "Command\nRunner\n(FlashOS)"], ["notepad", "Notepad"], ["paint", "Paint"]];
 function launch(id) {
     closeMenu();
     if (id == "term") openTerminal("");
     else if (id == "files") openFiles();
     else if (id == "web") openWeb();
     else if (id == "notepad") openNotepad(null);
+    else if (id == "paint") openPaint(null);
     else if (id == "settings") openSettings("");
     else if (id == "ball") runSWF("ballgame.swf", "");
 }
@@ -379,7 +381,69 @@ function updateTasks() {}
 function two(n) { return n < 10 ? "0" + n : "" + n; }
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function tick() {}
+// the clock: a white box at the top right; click it for the calendar
+var clockClip = null, clockT, dateT, lastMin = -1, calOpen = false, calMonth, calYear;
+var MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function buildClock() {
+    clockClip = taskbar.createEmptyMovieClip("clock", 5);
+    clockClip._x = W - 212; clockClip._y = 12;
+    box(clockClip, 0, 0, 200, 64, WHITE, INK, 2, 0);
+    clockT = label(clockClip, "t", 1, 0, 4, 200, 36, "", 32, INK, false, "center");
+    dateT = label(clockClip, "d", 2, 0, 38, 200, 22, "", 16, GREY, false, "center");
+    clockClip.onRelease = function () { if (calOpen) closeCalendar(); else openCalendar(); };
+    lastMin = -1;
+    tick();
+}
+function tick() {
+    if (!clockClip) return;
+    var d = new Date();
+    if (d.getMinutes() == lastMin) return;
+    lastMin = d.getMinutes();
+    clockT.text = two(d.getHours()) + ":" + two(d.getMinutes());
+    dateT.text = DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();
+}
+setInterval(tick, 1000);
+function closeCalendar() {
+    if (!calOpen) return;
+    menuLayer.cal.removeMovieClip();
+    menuLayer.calCatch.removeMovieClip();
+    calOpen = false;
+}
+function openCalendar() {
+    closeMenu();
+    var d = new Date();
+    calMonth = d.getMonth(); calYear = d.getFullYear();
+    calOpen = true;
+    var c = menuLayer.createEmptyMovieClip("calCatch", 5);
+    box(c, 0, 0, W, H, 0xFFFFFF, 0, 0, 0);
+    c._alpha = 0;
+    c.onPress = function () { closeCalendar(); };
+    c.useHandCursor = false;
+    drawCalendar();
+}
+function drawCalendar() {
+    var p = menuLayer.createEmptyMovieClip("cal", 6);    // replaces the old one
+    var pw = 300, ph = 300;
+    p._x = W - 12 - pw; p._y = 80;
+    var g = p.createEmptyMovieClip("g", 1);
+    titleBar(g, 0, 0, pw, 28);
+    box(g, 0, 30, pw, ph - 30, WHITE, INK, 2, 0);
+    label(p, "m", 2, 0, 5, pw, 22, MONTH_NAMES[calMonth] + " " + calYear, 16, onC1(), false, "center");
+    button(p, "pv", 3, 4, 2, 28, 24, "<", function () { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } drawCalendar(); }, 0, 16);
+    button(p, "nx", 4, pw - 32, 2, 28, 24, ">", function () { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } drawCalendar(); }, 0, 16);
+    var heads = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"], cw = 40, x0 = 10;
+    for (var i = 0; i < 7; i++) label(p, "h" + i, 10 + i, x0 + i * cw, 38, cw, 22, heads[i], 16, i >= 5 ? 0xC00000 : GREY, false, "center");
+    var first = new Date(calYear, calMonth, 1).getDay();          // 0 = Sunday
+    first = (first + 6) % 7;                                       // 0 = Monday
+    var days = new Date(calYear, calMonth + 1, 0).getDate();
+    var now = new Date(), today = (now.getFullYear() == calYear && now.getMonth() == calMonth) ? now.getDate() : 0;
+    var hl = p.createEmptyMovieClip("hl", 5);
+    for (var dd = 1; dd <= days; dd++) {
+        var k = first + dd - 1, cx = x0 + (k % 7) * cw, cy = 64 + Math.floor(k / 7) * 38;
+        if (dd == today) box(hl, cx + 2, cy - 2, cw - 4, 30, C3, INK, 2, 0);
+        label(p, "d" + dd, 20 + dd, cx, cy + 4, cw, 22, "" + dd, 16, (k % 7) >= 5 ? 0xC00000 : INK, false, "center");
+    }
+}
 
 // ---------------------------------------------------------------- volume
 function applyVolume() {
@@ -416,6 +480,7 @@ function menuRow(p, name, depth, y, h, kind, text, onClick) {
     return r;
 }
 function openStart() {
+    closeCalendar();
     menuOpen = true;
     var c = menuLayer.createEmptyMovieClip("catcher", 1);
     box(c, 0, 0, W, H, 0xFFFFFF, 0, 0, 0);
@@ -558,12 +623,13 @@ function termCommand(line) {
     var sp = line.indexOf(" ");
     var cmd = (sp < 0 ? line : line.substr(0, sp)).toLowerCase(), arg = sp < 0 ? "" : line.substr(sp + 1);
     if (cmd == "") return;
-    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, SETTINGS, BALL   open an app\n  THEME <default|orange|green|blue|byrott>   window theme\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
+    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, PAINT, SETTINGS, BALL   open an app\n  THEME <default|orange|green|blue|byrott>   window theme\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
     else if (cmd == "files") openFiles();
     else if (cmd == "internet" || cmd == "web") openWeb();
     else if (cmd == "notepad") openNotepad(null);
     else if (cmd == "settings") openSettings("");
     else if (cmd == "ball") launch("ball");
+    else if (cmd == "paint") openPaint(null);
     else if (cmd == "theme" || cmd == "color" || cmd == "colour") {
         var cn = arg.toLowerCase();
         if (!THEMES[cn]) tprint("  Themes: default, orange, green, blue, byrott");
@@ -572,7 +638,7 @@ function termCommand(line) {
     else if (cmd == "ls" || cmd == "dir") {
         var all = FlashOS.files("");
         for (var i = 0; i < all.length; i++) {
-            if (all[i].where == "system" && isSystemArt(all[i].name)) continue;
+            if (hiddenFile(all[i])) continue;
             var n = all[i].name;
             while (n.length < 30) n += " ";
             var s = "" + Math.ceil(all[i].size / 1024);
@@ -583,7 +649,7 @@ function termCommand(line) {
     } else if (cmd == "cls" || cmd == "clear") { termLines = []; tprint(""); }
     else if (cmd == "mem") tprint("  " + Math.round(FlashOS.memoryKB() / 1024) + " MB free for apps.");
     else if (cmd == "date" || cmd == "time") { var d = new Date(); tprint("  " + DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + "  " + two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds())); }
-    else if (cmd == "about" || cmd == "ver") tprint("  ByroTT 1.0 on FlashOS " + FlashOS.version + " (ByroTT edition).\n  Files are saved on the " + (FlashOS.storage() == "disk" ? "hard disk." : "memory (not installed)."));
+    else if (cmd == "about" || cmd == "ver") tprint("  ByroTT 2.0 on FlashOS " + FlashOS.version + " (ByroTT edition).\n  Files are saved on the " + (FlashOS.storage() == "disk" ? "hard disk." : "memory (not installed)."));
     else if (cmd == "exit") closeWindow(wins["term"]);
     else if (cmd == "open") { var f = findFile(arg); if (f) openFile(f.name); else tprint("  File not found: " + arg); }
     else if (cmd == "run" || cmd == "play") termRun(arg);
@@ -665,6 +731,159 @@ function prompt(title, text, def, done) {
     Selection.setSelection(0, def.length);
 }
 
+// ================================================================ PAINT
+// one canvas for the whole session (pictures are big; they are made once)
+var PW_ = 780, PH_ = 520;
+var paintBmp = null, paintUndo = null, paintFull = null, paintOrigin = null;
+var paintTool = "pencil", paintCol = 0x000000, paintSize = 3, paintName = "", paintDirty = false;
+var PAINT_COLS = [0x000000, 0x808080, 0xC0C0C0, 0xFFFFFF, 0x800000, 0xFF0000, 0xFF8C00, 0xFFFF00,
+                  0x008000, 0x22EE66, 0x008080, 0xB4FFFF, 0x000080, 0x1E7BFF, 0x800080, 0xFF6EC7];
+var PAINT_TOOLS = [["pencil", "Pencil"], ["brush", "Brush"], ["eraser", "Eraser"], ["line", "Line"], ["box", "Box"], ["fill", "Fill"]];
+function openPaint(file) {
+    var w = makeWindow("paint", "Paint", 940, 620, false, null);
+    if (!w) return;
+    if (!paintBmp) {
+        paintBmp = new flash.display.BitmapData(PW_, PH_, false, 0xFFFFFF);
+        paintUndo = new flash.display.BitmapData(PW_, PH_, false, 0xFFFFFF);
+        paintFull = new flash.geom.Rectangle(0, 0, PW_, PH_);
+        paintOrigin = new flash.geom.Point(0, 0);
+    }
+    var b = w.body;
+    // top: file buttons
+    button(b, "new", 1, 140, 0, 70, 34, "New", function () { paintSnap(); paintBmp.fillRect(paintFull, 0xFFFFFF); paintName = ""; paintDirty = false; paintTitle(); }, 0, 16);
+    button(b, "open", 2, 214, 0, 80, 34, "Open...", function () {
+        prompt("Open a picture", "File name (a picture on the disk, CD or USB):", paintName == "" ? "" : paintName, function (n) { paintLoad(n); });
+    }, 0, 16);
+    button(b, "save", 3, 298, 0, 70, 34, "Save", function () { paintSave(false, null); }, 1, 16);
+    button(b, "saveas", 4, 372, 0, 100, 34, "Save as...", function () { paintSave(true, null); }, 0, 16);
+    button(b, "undo", 5, 476, 0, 70, 34, "Undo", function () { paintUndoNow(); }, 0, 16);
+    button(b, "wall", 6, 740, 0, 180, 34, "Use as wallpaper", function () {
+        paintSave(paintName == "", function () { setWallpaper(paintName); saveCfg(); message("Paint", paintName + " is your wallpaper now."); });
+    }, 0, 16);
+    // left: tools, sizes, colours
+    var side = b.createEmptyMovieClip("side", 7);
+    box(side, 0, 0, 130, 600, LIGHT, INK, 2, 0);
+    w.tools = [];
+    for (var i = 0; i < PAINT_TOOLS.length; i++) {
+        var t = button(b, "t" + i, 10 + i, 6, 6 + i * 38, 118, 34, PAINT_TOOLS[i][1], null, 2, 16);
+        t.tool = PAINT_TOOLS[i][0];
+        t.onRelease = function () { paintTool = this.tool; paintPaintSide(); };
+        w.tools.push(t);
+    }
+    label(b, "szl", 20, 8, 240, 110, 22, "Size", 16, INK, false);
+    w.sizes = [];
+    var SZ = [1, 3, 8, 16];
+    for (i = 0; i < SZ.length; i++) {
+        var sb = button(b, "z" + i, 21 + i, 6 + i * 30, 262, 28, 28, "", null, 2, 16);
+        sb.sz = SZ[i];
+        circle(sb.icon, 14, 14, Math.max(1.5, SZ[i] / 2 + 0.5), INK);
+        sb.onRelease = function () { paintSize = this.sz; paintPaintSide(); };
+        w.sizes.push(sb);
+    }
+    label(b, "cl", 30, 8, 300, 110, 22, "Colour", 16, INK, false);
+    w.cur = b.createEmptyMovieClip("cur", 31);
+    w.cur._x = 8; w.cur._y = 324;
+    for (i = 0; i < PAINT_COLS.length; i++) {
+        var sw = b.createEmptyMovieClip("c" + i, 40 + i);
+        sw._x = 8 + (i % 4) * 29; sw._y = 372 + Math.floor(i / 4) * 29;
+        box(sw, 0, 0, 26, 26, PAINT_COLS[i], INK, 1, 0);
+        sw.col = PAINT_COLS[i];
+        sw.onRelease = function () { paintCol = this.col; paintPaintSide(); };
+    }
+    // the canvas
+    var cv = b.createEmptyMovieClip("cv", 60);
+    cv._x = 140; cv._y = 42;
+    var frame = cv.createEmptyMovieClip("frame", 1);
+    box(frame, -2, -2, PW_ + 4, PH_ + 4, INK, 0, 0, 0);
+    var pic = cv.createEmptyMovieClip("pic", 2);
+    pic.attachBitmap(paintBmp, 1, "never", false);
+    var pre = cv.createEmptyMovieClip("pre", 3);     // line and box preview
+    var x0, y0, lx, ly, down = false;
+    function mx() { return Math.max(0, Math.min(PW_ - 1, Math.round(cv._xmouse))); }
+    function my() { return Math.max(0, Math.min(PH_ - 1, Math.round(cv._ymouse))); }
+    pic.onPress = function () {
+        paintSnap();
+        x0 = lx = mx(); y0 = ly = my();
+        paintDirty = true; paintTitle();
+        if (paintTool == "fill") { paintBmp.floodFill(x0, y0, paintCol); return; }
+        down = true;
+        if (paintTool == "pencil" || paintTool == "brush" || paintTool == "eraser") paintStroke(lx, ly, lx, ly);
+        cv.onEnterFrame = function () {
+            var x = mx(), y = my();
+            if (paintTool == "line" || paintTool == "box") {
+                pre.clear();
+                pre.lineStyle(Math.max(1, paintSz()), paintCol, 100);
+                if (paintTool == "line") { pre.moveTo(x0, y0); pre.lineTo(x, y); }
+                else { pre.moveTo(x0, y0); pre.lineTo(x, y0); pre.lineTo(x, y); pre.lineTo(x0, y); pre.lineTo(x0, y0); }
+                lx = x; ly = y;
+            } else if (x != lx || y != ly) { paintStroke(lx, ly, x, y); lx = x; ly = y; }
+        };
+    };
+    pic.onRelease = pic.onReleaseOutside = function () {
+        if (!down) return;
+        down = false;
+        delete cv.onEnterFrame;
+        pre.clear();
+        var s = paintSz();
+        if (paintTool == "line") paintBmp.drawLine(x0, y0, lx, ly, paintCol, s);
+        if (paintTool == "box") {
+            paintBmp.drawLine(x0, y0, lx, y0, paintCol, s); paintBmp.drawLine(lx, y0, lx, ly, paintCol, s);
+            paintBmp.drawLine(lx, ly, x0, ly, paintCol, s); paintBmp.drawLine(x0, ly, x0, y0, paintCol, s);
+        }
+    };
+    pic.useHandCursor = false;
+    paintPaintSide();
+    paintTitle();
+    if (file) paintLoad(file);
+}
+function paintSz() { return paintTool == "pencil" ? Math.min(paintSize, 3) : (paintTool == "eraser" ? paintSize * 2 + 6 : paintSize * 2); }
+function paintStroke(ax, ay, bx, by) { paintBmp.drawLine(ax, ay, bx, by, paintTool == "eraser" ? 0xFFFFFF : paintCol, paintSz()); }
+function paintSnap() { paintUndo.copyPixels(paintBmp, paintFull, paintOrigin); }
+function paintUndoNow() {
+    // swap the picture and the undo copy, so Undo twice is Redo (no new memory)
+    var w = wins["paint"];
+    if (!w) return;
+    if (!w.tmp) w.tmp = new flash.display.BitmapData(PW_, PH_, false, 0xFFFFFF);
+    w.tmp.copyPixels(paintBmp, paintFull, paintOrigin);
+    paintBmp.copyPixels(paintUndo, paintFull, paintOrigin);
+    paintUndo.copyPixels(w.tmp, paintFull, paintOrigin);
+}
+function paintPaintSide() {
+    var w = wins["paint"];
+    if (!w) return;
+    for (var i = 0; i < w.tools.length; i++) w.tools[i].setOn(w.tools[i].tool == paintTool);
+    for (i = 0; i < w.sizes.length; i++) w.sizes[i].setOn(w.sizes[i].sz == paintSize);
+    w.cur.clear();
+    box(w.cur, 0, 0, 112, 40, paintCol, INK, 2, 0);
+}
+function paintTitle() {
+    var w = wins["paint"];
+    if (w) w.titleTxt.text = (paintDirty ? "* " : "") + (paintName == "" ? "untitled.bmp" : paintName) + " - Paint";
+}
+function paintLoad(n) {
+    var bm = FlashOS.loadBitmap(n);
+    if (!bm) { message("Paint", "Sorry, " + n + " could not be opened as a picture."); return; }
+    paintSnap();
+    paintBmp.fillRect(paintFull, 0xFFFFFF);
+    paintBmp.copyPixels(bm, new flash.geom.Rectangle(0, 0, Math.min(bm.width, PW_), Math.min(bm.height, PH_)), paintOrigin);
+    paintName = ext(n) == "bmp" ? n : n.substr(0, n.lastIndexOf(".")) + ".bmp";
+    paintDirty = ext(n) != "bmp";
+    paintTitle();
+}
+function paintSave(askName, then) {
+    if (askName || paintName == "") {
+        prompt("Save picture", "File name:", paintName == "" ? "drawing.bmp" : paintName, function (n) {
+            if (n == "") return;
+            if (ext(n) != "bmp") n += ".bmp";
+            paintName = n;
+            paintSave(false, then);
+        });
+        return;
+    }
+    if (FlashOS.saveBitmap(paintName, paintBmp)) { paintDirty = false; paintTitle(); if (then) then(); }
+    else message("Paint", "Sorry, the picture could not be saved. The disk may be full.");
+}
+
 // ================================================================ VIEWER (pictures and videos)
 var vid = null;
 function openViewer(file) {
@@ -690,6 +909,7 @@ function openViewer(file) {
     pic.attachBitmap(bmp, 1, "auto", true);
     fitInto(pic, bmp.width, bmp.height, 8, 8, 804, 524);
     button(b, "wall", 3, 12, 540, 200, 36, "Use as wallpaper", function () { setWallpaper(file); saveCfg(); }, 1, 15);
+    button(b, "edit", 6, 220, 540, 160, 36, "Edit in Paint", function () { openPaint(file); }, 0, 15);
     label(b, "info", 4, 400, 546, 400, 26, bmp.width + " x " + bmp.height + " pixels", 15, 0xB8C4CC, false, "right");
 }
 function fitInto(mc, w, h, x, y, bw, bh) {
@@ -749,15 +969,72 @@ function filesHome(w) {
     filesFolder(c, "xb", 2, 100, "files", "X Boot", function () {
         filesNote(w, "Unable to View this folder\nThis folder contains\nSystem's Boot Factor, if you\ndelete them system may not be able\nto boot properly or Potentially\nBrick your PC", null);
     });
-    filesFolder(c, "ad", 3, 190, "admin", "Admin", function () { filesPrivate(w); });
+    filesFolder(c, "ad", 3, 190, "admin", "Admin", function () { adminCheck(function () { filesPrivate(w); }); });
+}
+// ---- Admin: a password (optional) and the Private Folder
+function hashPass(p) {
+    var h = 5381;
+    p = "byrott:" + p;
+    for (var i = 0; i < p.length; i++) h = ((h * 33) ^ p.charCodeAt(i)) % 2147483647;
+    return "h" + h;
+}
+function askPassword(title, text, done) {
+    prompt(title, text, "", done);
+    var f = dialogLayer.panel.inp;
+    f.password = true;
+    f.text = "";
+    dialogLayer.answer = "";
+}
+function adminCheck(then) {
+    if (cfg.pass == "" || cfg.pass == undefined) { then(); return; }
+    askPassword("Admin", "Password:", function (p) {
+        if (hashPass(p) == cfg.pass) then();
+        else message("Admin", "Wrong Password");
+    });
+}
+function privateFiles() {
+    var all = FlashOS.files(""), out = [];
+    for (var i = 0; i < all.length; i++) if (all[i].name.indexOf(PRIV) == 0) out.push(all[i]);
+    return out;
 }
 function filesPrivate(w) {
     var c = filesPage(w);
     var fr = c.createEmptyMovieClip("fr", 1);
     box(fr, 10, 10, 840, 540, WHITE, INK, 3, 0);
-    filesFolder(c, "pf", 2, 30, "admin", "Private Folder", function () {
-        filesNote(w, "Nothing to see here.\n(click to return\nto main folder)", null);
-    });
+    var t = c.createEmptyMovieClip("t", 2);
+    t._x = 10;
+    icon(t, "ic", 1, 14, 18, "admin_s", false);
+    label(t, "n", 2, 56, 22, 600, 36, "Private Folder", 32, INK, false);
+    var list = privateFiles();
+    if (list.length == 0) {
+        var e = label(c, "e", 3, 40, 200, 780, 200, "", 32, INK, false, "center");
+        e.multiline = true;
+        e.text = "Nothing to see here.\n(click to return\nto main folder)";
+        fr.onRelease = function () { filesHome(w); };
+        label(c, "tip", 4, 40, 500, 780, 22, "Tip: Hard Disk > Make private puts a file here.", 16, GREY, false, "center");
+        return;
+    }
+    for (var i = 0; i < list.length && i < 9; i++) {
+        var r = c.createEmptyMovieClip("r" + i, 10 + i);
+        r._x = 24; r._y = 76 + i * 48;
+        r.hl = r.createEmptyMovieClip("hl", 1);
+        box(r.hl, 0, 0, 812, 44, C3, 0, 0, 0);
+        r.hl._alpha = 0;
+        icon(r, "ic", 2, 6, 6, fileKind(list[i].name), true);
+        label(r, "n", 3, 48, 12, 560, 22, list[i].name.substr(PRIV.length), 16, INK, false);
+        r.file = list[i].name;
+        r.onRollOver = function () { this.hl._alpha = 100; };
+        r.onRollOut = function () { this.hl._alpha = 0; };
+        r.onRelease = function () { openFile(this.file); };
+        var pb = button(r, "pub", 4, 640, 6, 160, 32, "Make public", null, 0, 16);
+        pb.file = list[i].name;
+        pb.onRelease = function () {
+            var n = this.file.substr(PRIV.length);
+            if (FlashOS.copyFile(this.file, n)) { FlashOS.remove(this.file); filesPrivate(w); }
+            else message("Files", "Sorry, the file could not be moved.");
+        };
+    }
+    button(c, "back", 40, 24, 500, 160, 38, "< Back", function () { filesHome(w); }, 0, 16);
 }
 function filesNote(w, text) {
     var c = filesPage(w);
@@ -785,9 +1062,10 @@ function filesBuildList(w) {
     button(b, "open", 30, 206, y, 100, 38, "Open", function () { if (filesSel >= 0) openFile(filesList[filesSel].name); }, 1, 15);
     button(b, "copy", 31, 312, y, 160, 38, "Copy to disk", function () { filesCopy(); }, 0, 15);
     button(b, "del", 32, 478, y, 100, 38, "Delete", function () { filesDelete(); }, 0, 15);
+    button(b, "prv", 36, 584, y, 120, 38, "Make private", function () { filesMakePrivate(); }, 0, 15);
     button(b, "up", 33, 760, y, 50, 38, "^", function () { if (filesFirst > 0) { filesFirst -= 10; if (filesFirst < 0) filesFirst = 0; filesDraw(); } }, 0, 16);
     button(b, "dn", 34, 816, y, 50, 38, "v", function () { if (filesFirst + 10 < filesList.length) { filesFirst += 10; filesDraw(); } }, 0, 15);
-    w.info = label(b, "info", 35, 590, y + 8, 166, 24, "", 13, GREY, false, "right");
+    w.info = label(b, "info", 35, 600, y + 44, 266, 24, "", 13, GREY, false, "right");
     var head = b.createEmptyMovieClip("head", 40);
     box(head, 200, 8, 668, 30, LIGHT, INK, 2, 0);
     label(b, "h1", 41, 250, 12, 300, 24, "Name", 14, GREY, true);
@@ -800,7 +1078,7 @@ function filesReload() {
     filesList = [];
     for (var i = 0; i < all.length; i++) {
         var wh = all[i].where == "memory" ? "disk" : all[i].where;
-        if ((filesPlace == "all" || wh == filesPlace) && !(all[i].where == "system" && isSystemArt(all[i].name))) filesList.push(all[i]);
+        if ((filesPlace == "all" || wh == filesPlace) && !hiddenFile(all[i])) filesList.push(all[i]);
     }
     var w = wins["files"];
     if (!w) return;
@@ -819,6 +1097,9 @@ function fileKind(n) {
     return "file";
 }
 // the pictures ByroTT itself is drawn with are not shown as files
+// files the lists do not show: ByroTT's pictures, its own settings, private files
+function hiddenFile(f) { return (f.where == "system" && isSystemArt(f.name)) || f.name.indexOf("byrott.") == 0 || f.name.indexOf(PRIV) == 0 || f.name == "ballgame.hi"; }
+var PRIV = "private_";
 function isSystemArt(n) { return n.indexOf("icon_") == 0 || n.indexOf("logo_") == 0 || n == "start_btn.png" || n == "web_offline.png"; }
 function filesDraw() {
     var w = wins["files"];
@@ -866,6 +1147,16 @@ function filesCopy() {
     if (FlashOS.copyFile(f.name, f.name)) { message("Files", f.name + " was copied to the hard disk."); filesReload(); }
     else message("Files", "Sorry, " + f.name + " could not be copied. The disk may be full.");
 }
+function filesMakePrivate() {
+    if (filesSel < 0) { message("Files", "Pick a file first."); return; }
+    var f = filesList[filesSel];
+    if (f.where != "disk" && f.where != "memory") { message("Files", "Only files on the hard disk can go in the Private Folder."); return; }
+    if (!FlashOS.copyFile(f.name, PRIV + f.name)) { message("Files", "Sorry, " + f.name + " could not be moved."); return; }
+    FlashOS.remove(f.name);
+    filesSel = -1;
+    filesReload();
+    message("Files", f.name + " is now in Admin > Private Folder." + (cfg.pass == "" ? "\nTip: set an Admin Password in Settings." : ""));
+}
 function filesDelete() {
     if (filesSel < 0) { message("Files", "Pick a file first."); return; }
     var f = filesList[filesSel];
@@ -879,7 +1170,7 @@ function filesDelete() {
 // like the mock-up: one list, click a row to change it
 function wallName(f) { var n = f.substr(0, f.lastIndexOf(".")); return n.substr(0, 1).toUpperCase() + n.substr(1); }
 function openSettings(pg) {
-    if (!wins["settings"]) makeWindow("settings", "System Settings", 760, 520, false, null);
+    if (!wins["settings"]) makeWindow("settings", "System Settings", 760, 620, false, null);
     settingsPage("");
 }
 function setRow(c, name, depth, y, kind, text, onClick) {
@@ -921,11 +1212,27 @@ function settingsPage(pg) {
         setWallpaper(nextOf(systemWallpapers(), cfg.wallpaper)); saveCfg(); settingsPage("");
     });
     y += r.h + 4;
+    r = setRow(c, "pw", 6, y, "admin", "Admin Password\n(" + (cfg.pass == "" ? "Off" : "On") + ")", function () { setPassword(); });
+    y += r.h + 4;
     r = setRow(c, "del", 4, y, "delete", "Delete Byrott", function () { uninstallNow(); });
     y += r.h + 4;
-    r = setRow(c, "abt", 5, y, "about", "About Byrott 1.0\nByrott Is Not Affilated\nWith FlashOS At All\n(c) 2000 Byrott/FlashOS", null);
+    r = setRow(c, "abt", 5, y, "about", "About Byrott 2.0\nByrott Is Not Affilated\nWith FlashOS At All\n(c) 2000 Byrott/FlashOS", null);
 }
 function paintFrameColors(w) { w.paintBar(); }
+function setPassword() {
+    adminCheck(function () {
+        askPassword("Admin Password", "New password for the Admin folder\n(leave it empty for no password):", function (p) {
+            if (p == "") { cfg.pass = ""; saveCfg(); settingsPage(""); message("Admin Password", "The Admin folder has no password now."); return; }
+            askPassword("Admin Password", "Type the new password again:", function (q) {
+                if (q != p) { message("Admin Password", "The two passwords are not the same. Nothing changed."); return; }
+                cfg.pass = hashPass(p);
+                saveCfg();
+                settingsPage("");
+                message("Admin Password", "Password set. The Admin folder now asks for it.");
+            });
+        });
+    });
+}
 // the mock-up's uninstall: a question, "Deleting...", then "You Can Reboot"
 function uninstallNow() {
     ask("Delete Byrott", "Do You Want Uninstall This OS,\nIf You Uninstall it it maybe use FlashOS\nUnusable, Do you want Proceed?",
@@ -953,11 +1260,11 @@ var START_PAGE = "<title>ByroTT start page</title><h1>Welcome to the Internet</h
     "<li><a href=\"http://68k.news/\">68k.news</a> - today's news for vintage computers</li>" +
     "<li><a href=\"http://info.cern.ch/\">info.cern.ch</a> - the first web site ever</li>" +
     "<li><a href=\"http://example.com/\">example.com</a></li></ul>" +
-    "<p>Tip: click a link, or type an address at the top and press Enter.</p>";
+    "<p>Tip: click a link, or type an address at the top and press Enter. +Mark saves the page in your Bookmarks.</p>";
 var STYLE = [[16, INK, FONT], [32, INK, FONT], [32, INK, FONT], [16, INK, FONT], [16, 0x0000CC, FONT], [16, INK, MONO], [16, GREY, FONT], [16, INK, FONT]];
 var charW = [], lineHt = [], measured = false;
 var webItems, webLines, webScroll = 0, webUrl = "", webHist = [], webTitle = "", webForms = [];
-var webPage = null, webBar = null, webThumb = null, webStatus = null, webUrlF = null, netOk = false;
+var webPage = null, webBar = null, webThumb = null, webStatus = null, webUrlF = null, netOk = false, webImgs = [];
 
 function measureFonts() {
     if (measured) return;
@@ -1030,6 +1337,7 @@ function parseHtml(html) {
     var items = [], i = 0, n = html.length, bold = 0, href = null, pre = 0, skip = 0, head = 0, inTitle = false, form = null, space = false;
     webTitle = "";
     webForms = [];
+    webImgs = [];
     function word(s, st) { items.push({t: "w", s: s, st: st, href: href, sp: space}); space = true; }
     while (i < n) {
         var lt = html.indexOf("<", i);
@@ -1088,7 +1396,15 @@ function parseHtml(html) {
         else if (nm == "hr") items.push({t: "hr"});
         else if (nm == "pre") { pre = close ? 0 : 1; items.push({t: "br"}); }
         else if (nm == "td" || nm == "th") { if (!close) space = true; }
-        else if (nm == "img" && !close) { var alt = attr(tag, "alt"); if (alt != null && alt != "") word("[" + alt + "]", 6); }
+        else if (nm == "img" && !close) {
+            var alt = attr(tag, "alt"), src = attr(tag, "src"), iw = parseInt(attr(tag, "width")), ih = parseInt(attr(tag, "height"));
+            if (src != null && src != "" && webImgs.length < 12 && !(iw > 0 && iw < 8) && !(ih > 0 && ih < 8)) {
+                var im = {t: "img", src: src, alt: alt, href: href, w: iw > 0 ? iw : 0, h: ih > 0 ? ih : 0, bmp: null, tried: false};
+                items.push(im);
+                webImgs.push(im);
+                space = true;
+            } else if (alt != null && alt != "") word("[" + alt + "]", 6);
+        }
         else if (nm == "input" && !close) {
             var ty = attr(tag, "type");
             ty = ty == null ? "text" : ty.toLowerCase();
@@ -1123,6 +1439,13 @@ function layoutPage(items) {
             else segs.push({kind: "t", x: x + sp, w: ww, text: it.s, st: st, href: it.href});
             x += sp + ww;
             if (lineHt[st] > h) h = lineHt[st];
+        } else if (it.t == "img") {
+            if (!(it.w > 0 && it.h > 0)) continue;          // not loaded yet
+            var sc = Math.min(1, maxW / it.w, 360 / it.h), dw = Math.round(it.w * sc), dh = Math.round(it.h * sc);
+            if (x > 0 && x + dw + 8 > maxW) flush();
+            segs.push({kind: "img", x: x + 4, w: dw, h: dh, img: it});
+            x += dw + 8;
+            if (h < dh + 6) h = dh + 6;
         } else if (it.t == "in") {
             if (x > 0 && x + 310 > maxW) flush();
             segs.push({kind: "in", x: x + 4, w: 300, name: it.name, value: it.value, form: it.form});
@@ -1179,6 +1502,18 @@ function webMakeLine(L, idx) {
                 lk.href = g.href;
                 lk.onRelease = function () { webGo(webResolve(this.href)); };
             } else label(mc, "t" + s, s + 1, g.x - 2, L.h - lineHt[g.st] - 2, g.w * 1.04 + 16, lineHt[g.st] + 4, g.text, st[0], st[1], false, "left", st[2]);
+        } else if (g.kind == "img") {
+            var pc = mc.createEmptyMovieClip("p" + s, s + 1);
+            pc._x = g.x; pc._y = L.h - g.h - 3;
+            if (g.img.bmp) {
+                var pb = pc.createEmptyMovieClip("b", 1);
+                pb.attachBitmap(g.img.bmp, 1, "auto", true);
+                pb._xscale = g.w / g.img.bmp.width * 100; pb._yscale = g.h / g.img.bmp.height * 100;
+            } else {
+                box(pc, 0, 0, g.w, g.h, LIGHT, EDGE, 1, 0);
+                if (g.img.alt) label(pc, "a", 2, 4, 4, g.w - 8, 20, g.img.alt, 16, GREY, false);
+            }
+            if (g.img.href != null) { pc.href = g.img.href; pc.onRelease = function () { webGo(webResolve(this.href)); }; }
         } else if (g.kind == "in") {
             var f = input(mc, "i" + s, s + 1, g.x, 2, g.w, 32, 16);
             f.text = g.value;
@@ -1211,6 +1546,7 @@ function webSubmit(form) {
 function webResolve(h) {
     if (h == null) return webUrl;
     var low = h.toLowerCase();
+    if (low.indexOf("byrott:") == 0) return h;
     if (low.indexOf("http://") == 0 || low.indexOf("https://") == 0) return h;
     if (h.indexOf("//") == 0) return "http:" + h;
     var u = webUrl, p = u.indexOf("/", 7);
@@ -1232,20 +1568,128 @@ function webShowHtml(html, url) {
     webPage._x = 20; webPage._y = 56;
     measureFonts();
     if (html.indexOf("<") < 0) html = "<pre>" + html.split("&").join("&amp;").split("<").join("&lt;") + "</pre>";
+    webGen++;
+    if (FlashOS.webImagesReset) FlashOS.webImagesReset();      // the old page's pictures
+    if (webStatus && url.indexOf("byrott:") == 0) webStatus.text = "";
     webItems = parseHtml(html);
     webLines = layoutPage(webItems);
     webScroll = 0;
     webUrl = url;
     webUrlF.text = url;
     var w = wins["web"];
-    w.titleTxt.text = (webTitle != "" ? ents(webTitle) : url) + " - Internet Navigator 1.0";
+    w.titleTxt.text = (webTitle != "" ? ents(webTitle) : url) + " - Internet Navigator 2.0";
     webRender();
+    if (url.indexOf("http://") == 0) {
+        webAddHistory(url, webTitle != "" ? ents(webTitle) : url);
+        webLoadImages();
+    }
+}
+// the page again, after a picture arrived (keeps the scroll position)
+function webRelayout() {
+    if (!webPage) return;
+    var keep = webScroll;
+    webPage.removeMovieClip();
+    webPage = wins["web"].body.createEmptyMovieClip("page", 5);
+    webPage._x = 20; webPage._y = 56;
+    webLines = layoutPage(webItems);
+    webScroll = keep;
+    webRender();
+}
+// pictures load one per frame, so the page can be read meanwhile
+var webGen = 0;
+function webLoadImages() {
+    var gen = webGen, k = 0;
+    if (!FlashOS.httpImage || webImgs.length == 0) return;
+    var ld = wins["web"].body.createEmptyMovieClip("loader", 90);
+    ld.onEnterFrame = function () {
+        if (webGen != gen || !wins["web"]) { delete this.onEnterFrame; return; }
+        if (k >= webImgs.length) { webStatus.text = "Done"; delete this.onEnterFrame; return; }
+        var im = webImgs[k++];
+        var u = webResolve(im.src);
+        webStatus.text = "Picture " + k + " of " + webImgs.length + "...";
+        if (u.toLowerCase().indexOf("http://") != 0) return;     // https pictures cannot be loaded
+        var b = FlashOS.httpImage(u);
+        if (webGen != gen) return;
+        if (b && b.width >= 8 && b.height >= 8) {
+            im.bmp = b;
+            if (!(im.w > 0 && im.h > 0)) {                         // no size in the page: its own size
+                if (im.w > 0) { im.h = Math.round(b.height * im.w / b.width); }
+                else if (im.h > 0) { im.w = Math.round(b.width * im.h / b.height); }
+                else { im.w = b.width; im.h = b.height; }
+            }
+            webRelayout();
+        }
+        else if (im.w > 0 && im.h > 0) webRelayout();
+    };
+}
+// ---- bookmarks and history (saved on the disk)
+function listLoad(file) {
+    var t = FlashOS.read(file), out = [];
+    if (t == null) return null;
+    var ls = t.split("\n");
+    for (var i = 0; i < ls.length; i++) { var k = ls[i].indexOf("\t"); if (k > 0) out.push([ls[i].substr(0, k), ls[i].substr(k + 1)]); }
+    return out;
+}
+function listSave(file, l) {
+    var t = "";
+    for (var i = 0; i < l.length; i++) t += l[i][0] + "\t" + l[i][1] + "\n";
+    FlashOS.write(file, t);
+}
+var webMarks = null, webHistory = null;
+function marks() {
+    if (webMarks == null) webMarks = listLoad("byrott.marks");
+    if (webMarks == null) webMarks = [["http://frogfind.com/", "FrogFind"], ["http://68k.news/", "68k.news"], ["http://info.cern.ch/", "The first web site"]];
+    return webMarks;
+}
+function history() {
+    if (webHistory == null) webHistory = listLoad("byrott.history");
+    if (webHistory == null) webHistory = [];
+    return webHistory;
+}
+function webAddHistory(url, title) {
+    var h = history();
+    if (h.length && h[0][0] == url) return;
+    h.unshift([url, title.split("\t").join(" ").split("\n").join(" ")]);
+    while (h.length > 60) h.pop();
+    listSave("byrott.history", h);
+}
+function webAddMark() {
+    if (webUrl.indexOf("http://") != 0) { message("Bookmarks", "Only web pages (http://) can be bookmarked."); return; }
+    var m = marks();
+    for (var i = 0; i < m.length; i++) if (m[i][0] == webUrl) { message("Bookmarks", "This page is already in your bookmarks."); return; }
+    m.push([webUrl, webTitle != "" ? ents(webTitle).split("\t").join(" ") : webUrl]);
+    listSave("byrott.marks", m);
+    message("Bookmarks", "Added to your bookmarks:\n" + m[m.length - 1][1]);
+}
+function esc(t) { return t.split("&").join("&amp;").split("<").join("&lt;"); }
+function webMarksPage() {
+    var m = marks(), h = "<title>Bookmarks</title><h1>Bookmarks</h1>";
+    if (m.length == 0) h += "<p>No bookmarks yet. Open a page and press Mark.</p>";
+    for (var i = 0; i < m.length; i++)
+        h += "<p><a href=\"" + m[i][0] + "\">" + esc(m[i][1]) + "</a> <small>" + esc(m[i][0]) + "</small> <a href=\"byrott:unmark?" + i + "\">[remove]</a></p>";
+    webShowHtml(h, "byrott:bookmarks");
+}
+function webHistoryPage() {
+    var l = history(), h = "<title>History</title><h1>History</h1><p><a href=\"byrott:clearhistory\">[Clear history]</a></p>";
+    if (l.length == 0) h += "<p>No pages visited yet.</p>";
+    for (var i = 0; i < l.length; i++) h += "<a href=\"" + l[i][0] + "\">" + esc(l[i][1]) + "</a><br>";
+    webShowHtml(h, "byrott:history");
 }
 function webError(url, msg) {
     webShowHtml("<h2>Sorry, this page cannot be opened</h2><p>" + msg + "</p><p><a href=\"byrott:start\">Back to the start page</a></p>", url);
 }
 function webGo(url) {
     if (url == "byrott:start") { webShowHtml(START_PAGE, "byrott:start"); return; }
+    if (url == "byrott:bookmarks") { webMarksPage(); return; }
+    if (url == "byrott:history") { webHistoryPage(); return; }
+    if (url == "byrott:clearhistory") { webHistory = []; listSave("byrott.history", []); webHistoryPage(); return; }
+    if (url.indexOf("byrott:unmark?") == 0) {
+        var m = marks();
+        m.splice(parseInt(url.substr(14)), 1);
+        listSave("byrott.marks", m);
+        webMarksPage();
+        return;
+    }
     if (url.toLowerCase().indexOf("https://") == 0) {
         webError(url, "This site uses https://, which ByroTT cannot open. Try the same site with http://, or search for it with <a href=\"http://frogfind.com/\">FrogFind</a>.");
         return;
@@ -1282,15 +1726,18 @@ function webOffline(why) {
     label(pic, "why", 1, 0, 270, 600, 22, "(" + why + ". VirtualBox: Settings, Network, NAT.)", 16, GREY, false);
 }
 function openWeb() {
-    var w = makeWindow("web", "Internet Navigator 1.0", WEB_W + 20, 620, false, function () { webPage = null; });
+    var w = makeWindow("web", "Internet Navigator 2.0", WEB_W + 20, 620, false, function () { webPage = null; });
     if (!w) return;
     var b = w.body;
     var tb = b.createEmptyMovieClip("tb", 1);
     box(tb, 0, 0, WEB_W + 20, 50, LIGHT, INK, 2, 0);
-    button(b, "back", 2, 10, 8, 70, 34, "Back", function () { if (webHist.length) { var u = webHist.pop(); webUrl = ""; webGo(u); webHist.pop(); } }, 0, 15);
-    button(b, "home", 3, 86, 8, 70, 34, "Home", function () { webGo("byrott:start"); }, 0, 15);
-    webUrlF = input(b, "url", 4, 166, 8, WEB_W - 250, 34, 16);
-    button(b, "go", 6, WEB_W - 76, 8, 86, 34, "Go", function () { webGo(webUrlF.text); }, 1, 15);
+    button(b, "back", 2, 8, 8, 56, 34, "Back", function () { if (webHist.length) { var u = webHist.pop(); webUrl = ""; webGo(u); webHist.pop(); } }, 0, 15);
+    button(b, "home", 3, 68, 8, 56, 34, "Home", function () { webGo("byrott:start"); }, 0, 15);
+    webUrlF = input(b, "url", 4, 130, 10, WEB_W - 426, 30, 16);
+    button(b, "go", 6, WEB_W - 290, 8, 44, 34, "Go", function () { webGo(webUrlF.text); }, 1, 15);
+    button(b, "mk", 11, WEB_W - 240, 8, 64, 34, "+Mark", function () { webAddMark(); }, 0, 15);
+    button(b, "bm", 12, WEB_W - 170, 8, 92, 34, "Bookmarks", function () { webGo("byrott:bookmarks"); }, 0, 15);
+    button(b, "hi", 13, WEB_W - 72, 8, 82, 34, "History", function () { webGo("byrott:history"); }, 0, 15);
     var bar = b.createEmptyMovieClip("bar", 7);
     bar._x = WEB_W + 2; bar._y = 56;
     box(bar, 0, 0, 12, WEB_VIEW, 0xC8C8C8, 0, 0, 0);
@@ -1345,6 +1792,7 @@ function startDesktop() {
     setWallpaper(cfg.wallpaper);
     buildIcons();
     paintTaskbar();
+    buildClock();
     applyVolume();
     applyCursor();
     tick();

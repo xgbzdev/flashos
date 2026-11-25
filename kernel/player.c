@@ -21,6 +21,12 @@ static int n_init_done;
 /* ---------------------------------------------------------------- memory */
 static u8 *a_base, *a_top, *a_end;
 u32 a_free_bytes(void) { return (u32)(a_end - a_top); }
+/* point amalloc at another region for a while (web pictures); returns the old one */
+void arena_switch(u8 **top, u8 **end) {
+    u8 *t = a_top, *e = a_end;
+    a_top = *top; a_end = *end;
+    *top = t; *end = e;
+}
 #ifdef BYROTT
 /* ByroTT edition: play a movie inside a big black window with a title bar and an X */
 int swf_window;

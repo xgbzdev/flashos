@@ -758,7 +758,7 @@ static void play_windowed(const char *name) {
     }
     const char *err = NULL;
     swf_window = 1;
-    swf_window_title = !kstricmp(name, "ballgame.swf") ? "Ball Game v1.0" : name;
+    swf_window_title = !kstricmp(name, "ballgame.swf") ? "Ball Game v2.0" : name;
     swf_play(data, size, &err);
     swf_window = 0;
     if (err) {

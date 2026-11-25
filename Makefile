@@ -70,7 +70,7 @@ build/apps/Maze.swf: apps/maze/maze.as tools/asc.py apps/maze/PressStart2P-Regul
 	$(PY) tools/asc.py $< $@ --font apps/maze/PressStart2P-Regular.ttf "Press Start 2P" --title "Maze 3D" --fps 30
 build/apps/BallGame.swf: apps/byrott/ballgame.as tools/asc.py apps/byrott/unifont.otf | build
 	mkdir -p build/apps
-	$(PY) tools/asc.py $< $@ --font apps/byrott/unifont.otf "Unifont" --title "Ball Game v1.0" --size 800x560 --fps 30 --bg 990000
+	$(PY) tools/asc.py $< $@ --font apps/byrott/unifont.otf "Unifont" --title "Ball Game v2.0" --size 800x560 --fps 30 --bg 990000
 apps: build/apps/FlashNotepad.swf build/apps/Maze.swf build/apps/BallGame.swf
 .PHONY: apps
 

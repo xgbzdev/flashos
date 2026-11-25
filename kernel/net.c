@@ -23,6 +23,10 @@ int net_get_buf(const char *url, u8 *buf, u32 cap, u8 **data, u32 *len, int *sta
     for (const char *p = url; *p; p++) h = h * 31 + (u8)*p;
     FILE *f = fopen("sim_web.html", "rb");
     snprintf(name, sizeof name, "sim_web_%u.html", h % 4);
+    const char *dot = url;                                /* pictures: sim_img.<ext> */
+    for (const char *p = url; *p; p++) if (*p == '.') dot = p;
+    if (!kstricmp(dot, ".png") || !kstricmp(dot, ".jpg") || !kstricmp(dot, ".gif"))
+        snprintf(name, sizeof name, "sim_img%s", dot);
     FILE *g = fopen(name, "rb");
     if (g) { if (f) fclose(f); f = g; }
     if (!f) { kstrcpy(err, "no network in the simulator", 48); return 0; }

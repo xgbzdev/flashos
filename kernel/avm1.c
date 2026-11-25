@@ -2556,13 +2556,23 @@ static int days_from_civil(int y, int m, int d) {
     return era * 146097 + doe - 719468;
 }
 static val nf_Date(ctx *c, val th, val *a, int n) {
-    (void)c; (void)a; (void)n;
+    (void)c;
     obj *o = th.t == V_OBJ ? th.u.o : new_obj(date_proto);
     int h, mi, s, d, mo, y;
     plat_rtc(&h, &mi, &s, &d, &mo, &y);
     if (mo < 1 || mo > 12) mo = 1;
     if (d < 1) d = 1;
     o->kind = O_DATE;
+    if (n >= 2) {                     /* new Date(year, month[, day, h, m, s]) */
+        int yy = to_i32(a[0]), mm = to_i32(a[1]);
+        int dd = n > 2 ? to_i32(a[2]) : 1;
+        yy += mm >= 0 ? mm / 12 : -((11 - mm) / 12);
+        mm = ((mm % 12) + 12) % 12;
+        num days = (num)days_from_civil(yy, mm + 1, 1) + (dd - 1);
+        num secs = (n > 3 ? to_i32(a[3]) : 0) * 3600.0 + (n > 4 ? to_i32(a[4]) : 0) * 60.0 + (n > 5 ? to_i32(a[5]) : 0);
+        o->prim = (days * 86400.0 + secs) * 1000.0;
+        return vobj(o);
+    }
     o->prim = ((num)days_from_civil(y, mo, d) * 86400.0 + h * 3600 + mi * 60 + s) * 1000.0 + (plat_ms() % 1000);
     return vobj(o);
 }
@@ -3173,6 +3183,46 @@ static val nf_bHttp(ctx *c, val th, val *a, int n) {
     }
     return vobj(o);
 }
+/* httpImage(url): a picture from the web as a BitmapData, or null.
+ * Pictures are decoded into their own 24 MB pool, which webImagesReset()
+ * empties (for the next page); the old BitmapDatas become empty. */
+void arena_switch(u8 **top, u8 **end);
+#define IMG_POOL (24u << 20)
+static u8 *img_buf, *img_pool;
+static u32 img_used, img_cap;
+static bitmap *img_heads[64];
+static int img_n;
+static val nf_bHttpImage(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    const u32 cap = 2u << 20;
+    if (!img_buf) img_buf = amalloc(cap);
+    if (!img_pool) { img_cap = IMG_POOL; img_pool = amalloc(img_cap); }
+    if (!img_pool) { img_cap = 8u << 20; img_pool = amalloc(img_cap); }   /* a small computer */
+    if (!img_buf || !img_pool || img_n >= 64) return vobj(NULL);
+    u8 *data = NULL;
+    u32 len = 0;
+    int status = 0;
+    char err[64];
+    if (!net_get_buf(as_tostring(ARG(0)), img_buf, cap, &data, &len, &status, err) || status >= 400 || len < 16) return vobj(NULL);
+    u8 *top = img_pool + img_used, *end = img_pool + img_cap;
+    arena_switch(&top, &end);                     /* decode into the pool */
+    bitmap *bm = image_decode_file(data, len);
+    arena_switch(&top, &end);                     /* back to the normal memory */
+    img_used = (u32)(top - img_pool);             /* top now holds the pool's new top */
+    if (!bm || !bm->px) return vobj(NULL);
+    bitmap *head = amalloc(sizeof *head);         /* the header lives outside the pool */
+    if (!head) return vobj(NULL);
+    *head = *bm;
+    img_heads[img_n++] = head;
+    return wrap_bitmap(head);
+}
+static val nf_bImgReset(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th; (void)a; (void)n;
+    for (int i = 0; i < img_n; i++) { img_heads[i]->px = NULL; img_heads[i]->w = img_heads[i]->h = 0; }
+    img_n = 0;
+    img_used = 0;
+    return vundef();
+}
 /* copy any file (CD, USB, ...) to the hard disk, byte for byte */
 static val nf_bCopy(ctx *c, val th, val *a, int n) {
     (void)c; (void)th;
@@ -3200,6 +3250,7 @@ static val nf_bMuted(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a
 static val nf_bSetMuted(ctx *c, val th, val *a, int n) { (void)c; (void)th; audio_set_muted(to_bool(ARG(0))); return vundef(); }
 static void byrott_api(obj *f) {
     net_buf = NULL;
+    img_buf = img_pool = NULL; img_n = 0; img_used = 0;
     set_hidden(f, "edition", vstr("ByroTT"));
     def_native(f, "install", nf_bInstall);
     def_native(f, "disks", nf_bDisks);
@@ -3214,6 +3265,8 @@ static void byrott_api(obj *f) {
     def_native(f, "httpGet", nf_bHttp);
     def_native(f, "copyFile", nf_bCopy);
     def_native(f, "cursorColor", nf_bCursor);
+    def_native(f, "httpImage", nf_bHttpImage);
+    def_native(f, "webImagesReset", nf_bImgReset);
     def_native(f, "volume", nf_bVol);
     def_native(f, "setVolume", nf_bSetVol);
     def_native(f, "muted", nf_bMuted);
