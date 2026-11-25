@@ -1358,18 +1358,31 @@ int swf_play(const u8 *data, u32 size, const char **err) {
         video_fill(0, 0, scr_w, scr_h, 0xFF000000u);
         video_present(0, 0, scr_w, scr_h);
         int first = 1, skipped = 0;
+        /* Fixed schedule from the SWF's own frame rate (like the Flash
+         * Player): frame N is due at start + N * frame time. Sound never
+         * speeds the movie up; if the PC is behind schedule, frames are
+         * advanced without being drawn (at most 8 in a row). */
+        u32 frame_us = (u32)(int)(1000000.0f / fps);
+        u32 start = plat_ms();
+        u64 nframe = 0;
+        (void)frame_ms;
         while (!quit_requested) {
-            u32 t0 = plat_ms();
             handle_input();
             if (quit_requested) break;
             if (!first) advance_all();
             first = 0;
-            /* streamed music falling behind (slow PC): advance the movie
-             * without drawing it, like Flash's frame dropping */
+            nframe++;
             audio_pump();
-            if (stream_fmt >= 0 && audio_stream_queued() < (u32)audio_rate() / 4 && skipped < 8) {
+            u32 due = start + (u32)(nframe * frame_us / 1000);
+            if ((s32)(plat_ms() - due) > 0 && skipped < 8) {
                 skipped++;
                 continue;
+            }
+            if (skipped >= 8 && (s32)(plat_ms() - due) > 200) {
+                /* far behind (very slow PC): restart the schedule here */
+                start = plat_ms();
+                nframe = 0;
+                due = start;
             }
             skipped = 0;
             video_fill(vx, vy, vw, vh, bg_color);
@@ -1380,10 +1393,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
             if (osd_shown) draw_volume_osd_keep();
             int show = interactive && mouse_visible;
             if (show) draw_cursor(sx_mouse, sy_mouse, hot && hot->hand);
-            /* streamed music sets the pace, like Flash: if the music is about
-             * to run dry, play the next frame now instead of waiting */
-            int hurry = stream_fmt >= 0 && audio_stream_queued() < (u32)audio_rate() / 4;
-            while (!hurry && plat_ms() - t0 < frame_ms && !quit_requested) {
+            while ((s32)(plat_ms() - due) < 0 && !quit_requested) {
                 int mx, my, mb;
                 plat_mouse(&mx, &my, &mb);
                 if (show && (mx != sx_mouse || my != sy_mouse)) {
