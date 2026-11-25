@@ -1466,24 +1466,26 @@ function layoutPage(items) {
 }
 
 // ---- drawing only the lines in view
+function webTotal() { return webLines.length ? webLines[webLines.length - 1].y + webLines[webLines.length - 1].h : 0; }
 function webRender() {
     if (!webPage) return;
-    var total = webLines.length ? webLines[webLines.length - 1].y + webLines[webLines.length - 1].h : 0;
+    var total = webTotal();
     var maxS = Math.max(0, total - WEB_VIEW);
     if (webScroll > maxS) webScroll = maxS;
     if (webScroll < 0) webScroll = 0;
     for (var i = 0; i < webLines.length; i++) {
         var L = webLines[i];
-        var vis = L.y >= webScroll && L.y + L.h <= webScroll + WEB_VIEW;
+        var vis = L.y + L.h > webScroll && L.y < webScroll + WEB_VIEW;     // also lines cut by the edges
         if (vis && !L.mc) webMakeLine(L, i);
         if (L.mc) { L.mc._visible = vis; L.mc._y = L.y - webScroll; }
     }
     webThumb._visible = maxS > 0;
     if (maxS > 0) {
-        var th = Math.max(30, WEB_VIEW * WEB_VIEW / total);
+        var th = Math.max(30, Math.round(WEB_VIEW * WEB_VIEW / total));
         webThumb.clear();
-        box(webThumb, 0, 0, 12, th, C1, 0, 0, 0);
-        webThumb._y = (WEB_VIEW - th) * webScroll / maxS;
+        box(webThumb, 1, 0, 14, th, C1, INK, 1, 0);
+        webThumb.h = th;
+        webThumb._y = Math.round((WEB_VIEW - th) * webScroll / maxS);
     }
 }
 function webMakeLine(L, idx) {
@@ -1566,6 +1568,7 @@ function webShowHtml(html, url) {
     if (webPage) webPage.removeMovieClip();
     webPage = wins["web"].body.createEmptyMovieClip("page", 5);
     webPage._x = 20; webPage._y = 56;
+    webPage.setMask(wins["web"].body.pmask);        // only the view shows
     measureFonts();
     if (html.indexOf("<") < 0) html = "<pre>" + html.split("&").join("&amp;").split("<").join("&lt;") + "</pre>";
     webGen++;
@@ -1591,6 +1594,7 @@ function webRelayout() {
     webPage.removeMovieClip();
     webPage = wins["web"].body.createEmptyMovieClip("page", 5);
     webPage._x = 20; webPage._y = 56;
+    webPage.setMask(wins["web"].body.pmask);        // only the view shows
     webLines = layoutPage(webItems);
     webScroll = keep;
     webRender();
@@ -1600,7 +1604,7 @@ var webGen = 0;
 function webLoadImages() {
     var gen = webGen, k = 0;
     if (!FlashOS.httpImage || webImgs.length == 0) return;
-    var ld = wins["web"].body.createEmptyMovieClip("loader", 90);
+    var ld = wins["web"].body.createEmptyMovieClip("loader", 120);
     ld.onEnterFrame = function () {
         if (webGen != gen || !wins["web"]) { delete this.onEnterFrame; return; }
         if (k >= webImgs.length) { webStatus.text = "Done"; delete this.onEnterFrame; return; }
@@ -1725,32 +1729,60 @@ function webOffline(why) {
     var pic = picture(w.body, "offline", 60, 160, 150, "web_offline.png");
     label(pic, "why", 1, 0, 270, 600, 22, "(" + why + ". VirtualBox: Settings, Network, NAT.)", 16, GREY, false);
 }
+function webScrollBy(d) { webScroll += d; webRender(); }
 function openWeb() {
     var w = makeWindow("web", "Internet Navigator 2.0", WEB_W + 20, 620, false, function () { webPage = null; });
     if (!w) return;
     var b = w.body;
-    var tb = b.createEmptyMovieClip("tb", 1);
-    box(tb, 0, 0, WEB_W + 20, 50, LIGHT, INK, 2, 0);
-    button(b, "back", 2, 8, 8, 56, 34, "Back", function () { if (webHist.length) { var u = webHist.pop(); webUrl = ""; webGo(u); webHist.pop(); } }, 0, 15);
-    button(b, "home", 3, 68, 8, 56, 34, "Home", function () { webGo("byrott:start"); }, 0, 15);
-    webUrlF = input(b, "url", 4, 130, 10, WEB_W - 426, 30, 16);
-    button(b, "go", 6, WEB_W - 290, 8, 44, 34, "Go", function () { webGo(webUrlF.text); }, 1, 15);
-    button(b, "mk", 11, WEB_W - 240, 8, 64, 34, "+Mark", function () { webAddMark(); }, 0, 15);
-    button(b, "bm", 12, WEB_W - 170, 8, 92, 34, "Bookmarks", function () { webGo("byrott:bookmarks"); }, 0, 15);
-    button(b, "hi", 13, WEB_W - 72, 8, 82, 34, "History", function () { webGo("byrott:history"); }, 0, 15);
-    var bar = b.createEmptyMovieClip("bar", 7);
+    // the page (depth 5) scrolls under two white covers, so lines cut at the
+    // top or bottom of the view are hidden there (the player has no masks)
+    var top = b.createEmptyMovieClip("coverTop", 80);
+    box(top, -8, -8, WEB_W + 36, 62, WHITE, 0, 0, 0);
+    box(top, 0, 0, WEB_W + 20, 50, LIGHT, INK, 2, 0);
+    var pm = b.createEmptyMovieClip("pmask", 4);    // the page view, a mask for the page
+    box(pm, 0, 56, WEB_W, WEB_VIEW, 0xFFFFFF, 0, 0, 0);
+    var bot = b.createEmptyMovieClip("coverBot", 81);
+    box(bot, -8, 56 + WEB_VIEW, WEB_W + 36, 620 - WEB_VIEW - 48, WHITE, 0, 0, 0);
+    box(bot, 0, 56 + WEB_VIEW, WEB_W + 20, 1, EDGE, 0, 0, 0);
+    button(b, "back", 82, 8, 8, 56, 34, "Back", function () { if (webHist.length) { var u = webHist.pop(); webUrl = ""; webGo(u); webHist.pop(); } }, 0, 15);
+    button(b, "home", 83, 68, 8, 56, 34, "Home", function () { webGo("byrott:start"); }, 0, 15);
+    webUrlF = input(b, "url", 84, 130, 10, WEB_W - 426, 30, 16);
+    button(b, "go", 85, WEB_W - 290, 8, 44, 34, "Go", function () { webGo(webUrlF.text); }, 1, 15);
+    button(b, "mk", 86, WEB_W - 240, 8, 64, 34, "+Mark", function () { webAddMark(); }, 0, 15);
+    button(b, "bm", 87, WEB_W - 170, 8, 92, 34, "Bookmarks", function () { webGo("byrott:bookmarks"); }, 0, 15);
+    button(b, "hi", 88, WEB_W - 72, 8, 82, 34, "History", function () { webGo("byrott:history"); }, 0, 15);
+    // the scroll bar: click above or below the thumb for a page, drag the thumb
+    var bar = b.createEmptyMovieClip("bar", 89);
     bar._x = WEB_W + 2; bar._y = 56;
-    box(bar, 0, 0, 12, WEB_VIEW, 0xC8C8C8, 0, 0, 0);
-    webThumb = bar.createEmptyMovieClip("th", 1);
-    bar.onPress = function () { webScroll += (this._ymouse > webThumb._y ? 1 : -1) * (WEB_VIEW - 40); webRender(); };
-    webStatus = label(b, "st", 8, 12, 542, 600, 24, "", 13, GREY, false);
-    var dn = button(b, "dn", 9, WEB_W - 76, 534, 86, 32, "Down", function () { webScroll += WEB_VIEW - 60; webRender(); }, 0, 14);
-    var up = button(b, "up", 10, WEB_W - 168, 534, 86, 32, "Up", function () { webScroll -= WEB_VIEW - 60; webRender(); }, 0, 14);
+    var track = bar.createEmptyMovieClip("track", 1);
+    box(track, 0, 0, 16, WEB_VIEW, LIGHT, INK, 1, 0);
+    track.onPress = function () { webScrollBy((bar._ymouse > webThumb._y ? 1 : -1) * (WEB_VIEW - 40)); };
+    track.useHandCursor = false;
+    webThumb = bar.createEmptyMovieClip("th", 2);
+    webThumb.onPress = function () {
+        var grab = bar._ymouse - this._y;
+        bar.onEnterFrame = function () {
+            var total = webTotal(), maxS = Math.max(0, total - WEB_VIEW), room = WEB_VIEW - webThumb.h;
+            if (room > 0) { webScroll = Math.round((bar._ymouse - grab) / room * maxS); webRender(); }
+        };
+    };
+    webThumb.onRelease = webThumb.onReleaseOutside = function () { delete bar.onEnterFrame; };
+    webThumb.useHandCursor = false;
+    webStatus = label(b, "st", 90, 12, 542, 600, 24, "", 13, GREY, false);
+    button(b, "dn", 91, WEB_W - 76, 534, 86, 32, "Down", function () { webScrollBy(WEB_VIEW - 60); }, 0, 14);
+    button(b, "up", 92, WEB_W - 168, 534, 86, 32, "Up", function () { webScrollBy(-(WEB_VIEW - 60)); }, 0, 14);
     w.focusField = null;
     webHist = [];
     webUrl = "";
     webShowHtml(START_PAGE, "byrott:start");
 }
+// the mouse wheel scrolls web pages (and the Command Runner)
+var wheelL = {};
+wheelL.onMouseWheel = function (delta) {
+    if (webPage && wins["web"]) { webScrollBy(-delta * 16); return; }
+    if (termOut && wins["term"]) { termOut.scroll -= delta; }
+};
+Mouse.addListener(wheelL);
 
 // ================================================================ keyboard
 var keyL = {};
@@ -1775,13 +1807,16 @@ keyL.onKeyDown = function () {
             if (f.indexOf("url") >= 0) webGo(webUrlF.text);
             else for (var i = 0; i < webForms.length; i++) { webSubmit(webForms[i]); break; }
         }
+        if (code == 33 || code == 34) webScrollBy((code == 34 ? 1 : -1) * (WEB_VIEW - 60));
         return;
     }
-    if (webPage && f == null && wins["web"] && wins["web"].getDepth() == winDepth) {
-        if (code == 40) { webScroll += 40; webRender(); }
-        if (code == 38) { webScroll -= 40; webRender(); }
-        if (code == 34 || code == 32) { webScroll += WEB_VIEW - 60; webRender(); }
-        if (code == 33) { webScroll -= WEB_VIEW - 60; webRender(); }
+    if (webPage && wins["web"]) {          // not typing: the keys scroll the page
+        if (code == 40) webScrollBy(48);
+        if (code == 38) webScrollBy(-48);
+        if (code == 34 || code == 32) webScrollBy(WEB_VIEW - 60);
+        if (code == 33) webScrollBy(-(WEB_VIEW - 60));
+        if (code == 36) { webScroll = 0; webRender(); }
+        if (code == 35) { webScroll = webTotal(); webRender(); }
     }
 };
 Key.addListener(keyL);

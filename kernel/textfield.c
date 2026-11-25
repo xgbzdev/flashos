@@ -317,7 +317,7 @@ static void fill_local(mat m, float x0, float y0, float x1, float y1, u32 col) {
     int c = (int)(m.a * x1 + m.tx), d = (int)(m.d * y1 + m.ty);
     if (c <= a) c = a + 1;
     if (d <= b) d = b + 1;
-    if (!mask_get_active()) video_fill(a, b, c - a, d - b, col);
+    fill_rect_masked(a, b, c - a, d - b, col);
 }
 
 void tf_render(inst *in, mat m, const cxf *cx) {

@@ -80,6 +80,7 @@ static u64 host_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t)
 u64 host_render_ns, host_frames, host_as_ns;
 #endif
 
+void as_wheel(int delta);
 void *amalloc(u32 n) {
     n = (n + 7) & ~7u;
     if (!a_base) { void *p = kmalloc(n); if (p) memset(p, 0, n); return p; }
@@ -915,7 +916,7 @@ static int hit_rec(inst *in, mat m, float x, float y, int hit_state) {
             if (shape_hit(in->dyn->built, iv.a * x + iv.c * y + iv.tx, iv.b * x + iv.d * y + iv.ty)) return 1;
         }
         for (int i = in->n - 1; i >= 0; i--)
-            if (!in->kids[i]->clipdepth && hit_rec(in->kids[i], mat_mul(m, in->kids[i]->m), x, y, hit_state)) return 1;
+            if (!in->kids[i]->clipdepth && !in->kids[i]->is_mask && hit_rec(in->kids[i], mat_mul(m, in->kids[i]->m), x, y, hit_state)) return 1;
         return 0;
     }
     }
@@ -963,7 +964,35 @@ static void render_text(text_def *td, mat m, const cxf *cx) {
     }
 }
 
+static int mask_level;
+static mat render_base;                 /* stage to screen, for masks */
+static void render_node_inner(inst *in, mat pm, cxf pc);
+/* a clip with a mask (setMask): draw the mask into a mask buffer first */
 static void render_node(inst *in, mat pm, cxf pc) {
+    if (in->dead || !in->visible || in->clipdepth || in->is_mask) return;
+    inst *mk = in->maskc;
+    if (mk && !mk->dead) {
+        u8 *outer = mask_get_active();
+        u8 *buf = mask_begin_write(mask_level);
+        if (buf) {
+            mask_level++;
+            mask_set_active(NULL);
+            mask_set_write(buf);
+            mat mw = mat_mul(render_base, mat_mul(root->m, inst_world(mk->parent)));
+            mk->is_mask = 0;
+            render_node_inner(mk, mw, CX_ID);
+            mk->is_mask = 1;
+            mask_set_write(NULL);
+            mask_set_active(buf);
+            render_node_inner(in, pm, pc);
+            mask_set_active(outer);
+            mask_level--;
+            return;
+        }
+    }
+    render_node_inner(in, pm, pc);
+}
+static void render_node_inner(inst *in, mat pm, cxf pc) {
     if (in->dead || !in->visible || in->clipdepth) return;
     mat m = mat_mul(pm, in->m);
     cxf c = cx_mul(pc, in->cx);
@@ -998,7 +1027,6 @@ static void render_node(inst *in, mat pm, cxf pc) {
 
 /* children in depth order; a child with clipdepth is a mask for the
  * children above it up to that depth */
-static int mask_level;
 static void render_kids(inst *in, mat m, cxf c) {
     u8 *outer = mask_get_active();
     int limit = -100000; /* depth up to which the current mask applies */
@@ -1086,7 +1114,7 @@ static inst *mouse_target(inst *in, mat m, float x, float y) {
     if (clip_is_button(in)) return hit_rec(in, m, x, y, 0) ? in : NULL;
     for (int i = in->n - 1; i >= 0; i--) {
         inst *k = in->kids[i];
-        if (k->clipdepth) continue;
+        if (k->clipdepth || k->is_mask) continue;
         inst *t = mouse_target(k, mat_mul(m, k->m), x, y);
         if (t) return t;
     }
@@ -1267,6 +1295,8 @@ static void handle_input(void) {
         all_clips(0x08, "onMouseMove", 0);
         as_listeners("Mouse", "onMouseMove");
     }
+    int wheel = plat_wheel();
+    if (wheel) as_wheel(-wheel * 3);              /* Flash: + is up, 3 per notch */
     inst *t = mouse_target(root, MAT_ID, tx, ty);
     if (t != hot) {
         if (!pressed) {
@@ -1477,6 +1507,7 @@ int swf_play(const u8 *data, u32 size, const char **err) {
 #ifdef HOSTED
             u64 rt0 = host_ns();
 #endif
+            render_base = base;
             render_node(root, base, CX_ID);
 #ifdef HOSTED
             host_render_ns += host_ns() - rt0;

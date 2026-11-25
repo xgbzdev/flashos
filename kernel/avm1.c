@@ -1017,6 +1017,27 @@ void as_call_handler(inst *in, const char *name, val *args, int n) {
     cur = saved;
 }
 
+/* Mouse listeners' onMouseWheel(delta) */
+void as_wheel(int delta) {
+    prop *p = own_prop(mouse_obj, "_listeners");
+    if (!p || p->v.t != V_OBJ) return;
+    obj *a = p->v.u.o;
+    for (int i = 0; i < a->alen; i++) {
+        val l = a->arr[i];
+        val f = get_member(l, vstr("onMouseWheel"));
+        if (f.t == V_OBJ && f.u.o->kind == O_FUNC) {
+            ctx c;
+            memset(&c, 0, sizeof c);
+            c.target = c.orig = root;
+            c.thisv = l;
+            ctx *saved = cur;
+            cur = &c;
+            val arg = vnum(delta);
+            call_fn(f.u.o, l, &arg, 1, NULL);
+            cur = saved;
+        }
+    }
+}
 void as_listeners(const char *which, const char *event) {
     obj *o = !kstricmp(which, "Key") ? key_obj : mouse_obj;
     prop *p = own_prop(o, "_listeners");
@@ -2177,6 +2198,17 @@ static val nf_createTextField(ctx *c, val th, val *a, int n) {
     k->m.ty = (float)(to_num(ARG(3)) * 20);
     k->o = NULL;
     return vobj(as_clip_obj(k));
+}
+/* mc.setMask(other): mc is drawn only where other is; setMask(null) undoes it */
+static val nf_setMask(ctx *c, val th, val *a, int n) {
+    THIS_CLIP
+    if (cl->maskc) { cl->maskc->is_mask = 0; cl->maskc = NULL; }
+    if (n < 1 || a[0].t == V_NULL || a[0].t == V_UNDEF) return vundef();
+    inst *o = target_of(c, a[0]);
+    if (!o || o == cl) return vundef();
+    cl->maskc = o;
+    o->is_mask = 1;
+    return vundef();
 }
 static val nf_hitTest(ctx *c, val th, val *a, int n) {
     THIS_CLIP
@@ -3500,7 +3532,7 @@ void as_init(void) {
     def_native(clip_proto, "loadVariables", nf_noop);
     def_native(clip_proto, "unloadMovie", nf_noop);
     def_native(clip_proto, "getURL", nf_noop);
-    def_native(clip_proto, "setMask", nf_noop);
+    def_native(clip_proto, "setMask", nf_setMask);
     def_native(clip_proto, "lineStyle", nf_lineStyle);
     def_native(clip_proto, "beginFill", nf_beginFill);
     def_native(clip_proto, "beginGradientFill", nf_beginFill);

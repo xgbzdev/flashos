@@ -389,6 +389,31 @@ u8 *mask_begin_write(int level) {
 void mask_set_write(u8 *buf) { mask_write = buf; }
 void mask_set_active(u8 *buf) { mask_active = buf; }
 u8 *mask_get_active(void) { return mask_active; }
+/* a solid rectangle, only where the active mask is (text field boxes) */
+void fill_rect_masked(int x, int y, int w, int h, u32 col) {
+    if (mask_write) return;
+    if (!mask_active) { video_fill(x, y, w, h, col); return; }
+    int x1 = x + w, y1 = y + h;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x1 > scr_w) x1 = scr_w;
+    if (y1 > scr_h) y1 = scr_h;
+    u32 *bb = video_bb();
+    u32 sa = col >> 24;
+    for (int yy = y; yy < y1; yy++) {
+        u32 *row = bb + yy * scr_w;
+        const u8 *am = mask_active + yy * scr_w;
+        for (int xx = x; xx < x1; xx++) {
+            u32 a = am[xx] * sa / 255;
+            if (!a) continue;
+            u32 d = row[xx];
+            if (a >= 255) { row[xx] = col | 0xFF000000u; continue; }
+            u32 rb = ((col & 0xFF00FF) * a + (d & 0xFF00FF) * (255 - a)) >> 8;
+            u32 g = ((col & 0x00FF00) * a + (d & 0x00FF00) * (255 - a)) >> 8;
+            row[xx] = 0xFF000000u | (rb & 0xFF00FF) | (g & 0x00FF00);
+        }
+    }
+}
 
 void render_init(void) {
     if (RE) return;

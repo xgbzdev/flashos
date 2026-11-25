@@ -78,6 +78,7 @@ int plat_kevent(int *code, int *down, int *ascii); /* Flash key events */
 int plat_kdown(int code);         /* is Flash key code held */
 void plat_mouse(int *x, int *y, int *buttons);
 void plat_mouse_set(int x, int y);
+int plat_wheel(void);            /* wheel steps since the last call: + down, - up */
 void plat_flush_input(void);
 void plat_rtc(int *h, int *m, int *s, int *day, int *mon, int *year);
 void *plat_heap2(u32 *size);      /* big heap for ActionScript */

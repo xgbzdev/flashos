@@ -152,6 +152,9 @@ struct inst {
     void *undo;
     /* attached BitmapData (attachBitmap) */
     void *bmpdata;
+    /* setMask: this clip is drawn only where maskc is; a mask is not drawn */
+    inst *maskc;
+    u8 is_mask;
 };
 
 /* ---------------- player API used by the ActionScript engine ---------------- */
@@ -255,6 +258,7 @@ u8 *mask_begin_write(int level);   /* clears and returns the mask buffer for a l
 void mask_set_write(u8 *buf);      /* NULL: normal drawing */
 void mask_set_active(u8 *buf);     /* NULL: no clipping */
 u8 *mask_get_active(void);
+void fill_rect_masked(int x, int y, int w, int h, u32 col);
 
 /* ---------------- text input (player.c) ---------------- */
 extern inst *text_focus;

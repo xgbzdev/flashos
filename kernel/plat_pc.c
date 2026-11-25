@@ -44,6 +44,8 @@ static int kbc_wait_read(void) {
     for (int i = 0; i < 100000; i++) if (inb(0x64) & 1) return 1;
     return 0;
 }
+static int mpsize = 3;                            /* 4 with a wheel */
+static int mwheel;                                /* wheel steps not read yet */
 static void mouse_cmd(u8 v) {
     kbc_wait_write(); outb(0x64, 0xD4);
     kbc_wait_write(); outb(0x60, v);
@@ -58,6 +60,13 @@ static void mouse_init(void) {
     kbc_wait_write(); outb(0x64, 0x60);
     kbc_wait_write(); outb(0x60, cfg);
     mouse_cmd(0xF6);                              /* defaults */
+    /* IntelliMouse: sample rates 200, 100, 80 turn on the wheel (ID 3) */
+    mouse_cmd(0xF3); mouse_cmd(200);
+    mouse_cmd(0xF3); mouse_cmd(100);
+    mouse_cmd(0xF3); mouse_cmd(80);
+    mouse_cmd(0xF2);                              /* get ID (after the ACK) */
+    if (kbc_wait_read() && inb(0x60) == 3) mpsize = 4;
+    mouse_cmd(0xF3); mouse_cmd(100);
     mouse_cmd(0xF4);                              /* streaming on */
 }
 
@@ -182,7 +191,7 @@ static struct { u8 code, down, ascii, mods; } eq[QN];  /* Flash key events */
 static int ev_mods, ev_active;
 static int eq_h, eq_t;
 
-static int mx = 320, my = 240, mbtn, mpkt[3], mpn;
+static int mx = 320, my = 240, mbtn, mpkt[4], mpn;
 
 static void push_char(int c) { if (cq_t - cq_h < QN) cq[cq_t++ % QN] = c; }
 static void push_ev(int code, int down, int ascii) {
@@ -244,9 +253,10 @@ static void kbd_byte(u8 sc) {
 static void mouse_byte(u8 b) {
     if (mpn == 0 && !(b & 0x08)) return; /* resync */
     mpkt[mpn++] = b;
-    if (mpn < 3) return;
+    if (mpn < mpsize) return;
     mpn = 0;
     int f = mpkt[0];
+    if (mpsize == 4) { int z = mpkt[3] & 0x0F; if (z & 8) z -= 16; mwheel += z; }
     if (f & 0xC0) return; /* overflow */
     int dx = mpkt[1] - ((f & 0x10) ? 256 : 0);
     int dy = mpkt[2] - ((f & 0x20) ? 256 : 0);
@@ -294,6 +304,7 @@ int plat_kdown(int code) {
 }
 void plat_mouse(int *x, int *y, int *b) { plat_poll(); *x = mx; *y = my; *b = mbtn; }
 void plat_mouse_set(int x, int y) { mx = x; my = y; }
+int plat_wheel(void) { plat_poll(); int w = mwheel; mwheel = 0; return w; }
 void plat_flush_input(void) {
     plat_poll();
     cq_h = cq_t;

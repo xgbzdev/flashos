@@ -93,6 +93,7 @@ static void advance(u32 ms) {
             sscanf(e->text, "%d %d", &mx, &my);
         } else if (!strcmp(e->kind, "mdown")) mb = 1;
         else if (!strcmp(e->kind, "mup")) mb = 0;
+        else if (!strcmp(e->kind, "wheel")) { extern int sim_wheel_add(int); sim_wheel_add(atoi(e->text)); }
     }
 }
 
@@ -131,6 +132,9 @@ int plat_kevent(int *code, int *down, int *ascii) {
 int plat_kdown(int code) { return code >= 0 && code < 256 && kstate[code]; }
 void plat_mouse(int *x, int *y, int *b) { *x = mx; *y = my; *b = mb; }
 void plat_mouse_set(int x, int y) { (void)x; (void)y; }
+static int sim_wheel;
+int sim_wheel_add(int n) { sim_wheel += n; return sim_wheel; }
+int plat_wheel(void) { int w = sim_wheel; sim_wheel = 0; return w; }
 void plat_flush_input(void) { cq_h = cq_t; kq_h = kq_t; memset(kstate, 0, sizeof kstate); }
 void plat_rtc(int *h, int *m, int *s, int *day, int *mon, int *year) { *h = 17; *m = 30; *s = 0; *day = 24; *mon = 11; *year = 2026; }
 void plat_reboot(void) { printf("reboot\n"); exit(0); }
