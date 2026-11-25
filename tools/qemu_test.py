@@ -81,6 +81,8 @@ if mode == "audio":
     time.sleep(10)
     type_text("vol\n")
     time.sleep(1.5)
+    type_text("time\n")
+    time.sleep(11)
     shot("01_vol")
     t0 = time.time()
     type_text("mp3stream\n")

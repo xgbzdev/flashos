@@ -95,6 +95,7 @@ void *plat_heap2(u32 *size) {
     return heap2;
 }
 u32 plat_ms(void) { advance(1); return now; }
+const char *plat_clock_name(void) { return "simulator"; }
 void plat_sleep(u32 ms) { advance(ms); }
 static u32 last_key;
 int plat_key(void) {

@@ -69,6 +69,7 @@ const u8 *plat_fs(void);
 const u8 *plat_usbfs(void);
 void *plat_heap(u32 *size);
 u32 plat_ms(void);
+const char *plat_clock_name(void);
 void plat_sleep(u32 ms);
 int plat_key(void);              /* shell: next char / KEY_* (drains input) */
 void plat_poll(void);             /* read keyboard + mouse controller */

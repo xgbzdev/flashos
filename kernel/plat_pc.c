@@ -61,7 +61,49 @@ static void mouse_init(void) {
     mouse_cmd(0xF4);                              /* streaming on */
 }
 
+/* ---------------- ACPI power-management timer (3.579545 MHz) ---------------- */
+static u16 pm_port;
+static u32 pm_mask, pm_last;
+static u64 pm_acc;
+static int clock_src; /* 0 TSC, 1 ACPI PM timer */
+
+static int sig_eq(const u8 *p, const char *s, int n) { for (int i = 0; i < n; i++) if (p[i] != (u8)s[i]) return 0; return 1; }
+static const u8 *find_rsdp(void) {
+    u32 bda = 0x40E; /* BIOS data area: EBDA segment */
+    __asm__("" : "+r"(bda));
+    u32 ebda = (u32)(*(volatile u16 *)bda) << 4;
+    if (ebda >= 0x80000 && ebda < 0xA0000)
+        for (u32 a = ebda; a < ebda + 1024; a += 16) if (sig_eq((const u8 *)a, "RSD PTR ", 8)) return (const u8 *)a;
+    for (u32 a = 0xE0000; a < 0x100000; a += 16) if (sig_eq((const u8 *)a, "RSD PTR ", 8)) return (const u8 *)a;
+    return NULL;
+}
+static void acpi_timer_init(void) {
+    const u8 *rsdp = find_rsdp();
+    if (!rsdp) return;
+    const u8 *rsdt = (const u8 *)*(const u32 *)(rsdp + 16);
+    if (!rsdt || !sig_eq(rsdt, "RSDT", 4)) return;
+    u32 len = *(const u32 *)(rsdt + 4);
+    for (u32 off = 36; off + 4 <= len; off += 4) {
+        const u8 *t = (const u8 *)*(const u32 *)(rsdt + off);
+        if (!t || !sig_eq(t, "FACP", 4)) continue;
+        u32 port = *(const u32 *)(t + 76);
+        if (!port || port > 0xFFFF || t[91] != 4) return;
+        pm_port = (u16)port;
+        pm_mask = (*(const u32 *)(t + 112) & 0x100) ? 0xFFFFFFFFu : 0x00FFFFFFu; /* TMR_VAL_EXT */
+        return;
+    }
+}
+static inline u32 inl_(u16 p) { u32 v; __asm__ volatile("inl %1, %0" : "=a"(v) : "Nd"(p)); return v; }
+
 void plat_init(void) {
+    acpi_timer_init(); /* before the heaps can overwrite the ACPI tables */
+    if (pm_port) {
+        /* sanity check: the timer must advance */
+        u32 a = inl_(pm_port) & pm_mask;
+        for (int i = 0; i < 100000; i++) {}
+        u32 b = inl_(pm_port) & pm_mask;
+        if (a != b) { clock_src = 1; pm_last = b; }
+    }
     outb(0x43, 0x34);
     outb(0x40, 0);
     outb(0x40, 0);
@@ -98,7 +140,16 @@ void *plat_heap2(u32 *size) {
     return (void *)base;
 }
 
-u32 plat_ms(void) { return div64(rdtsc() - tsc0, tsc_per_ms); }
+u32 plat_ms(void) {
+    if (clock_src == 1) {
+        u32 now = inl_(pm_port) & pm_mask;
+        pm_acc += (now - pm_last) & pm_mask;
+        pm_last = now;
+        return div64(pm_acc * 1000, 3579545);
+    }
+    return div64(rdtsc() - tsc0, tsc_per_ms);
+}
+const char *plat_clock_name(void) { return clock_src == 1 ? "ACPI PM timer" : "TSC (calibrated with the PIT)"; }
 void plat_sleep(u32 ms) { u32 t = plat_ms(); while (plat_ms() - t < ms) __asm__ volatile("pause"); }
 
 /* ---------------- keyboard (scancode set 1, US layout) ---------------- */

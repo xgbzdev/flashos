@@ -85,7 +85,8 @@ static void cmd_help(void) {
              "  ABOUT            about FlashOS\n"
              "  MEM              show installed RAM\n"
              "  RESCAN           read game CDs / ISO images again\n"
-             "  VOL [0-100|MUTE] sound volume (F9/F10/F11 while playing)\n");
+             "  VOL [0-100|MUTE] sound volume (F9/F10/F11 while playing)\n"
+             "  TIME             check that the clock runs at the right speed\n");
     if (!installed()) con_puts("  INSTALL          install FlashOS on the hard disk\n");
     con_puts(
              "  NET              connect to the wired network\n"
@@ -393,6 +394,23 @@ static void cmd_snddiag(void) {
     con_putc('\n');
 }
 
+/* TIME: count 10 seconds on screen to compare with a real clock */
+static void cmd_time(void) {
+    con_puts("\n Clock: ");
+    con_puts(plat_clock_name());
+    con_puts("\n Start a stopwatch now. Counting 10 seconds: ");
+    u32 t0 = plat_ms();
+    for (u32 s = 1; s <= 10; s++) {
+        while (plat_ms() - t0 < s * 1000) {
+            int k = plat_key();
+            if (k == KEY_ESC || k == KEY_CTRL_Q) { con_puts(" stopped\n"); return; }
+        }
+        put_num(s);
+        con_putc(' ');
+    }
+    con_puts("\n If your stopwatch also shows 10 seconds, FlashOS keeps time correctly.\n");
+}
+
 static void cmd_vol(const char *arg) {
     if (*arg) {
         int v = 0;
@@ -436,6 +454,7 @@ static void handle(char *line) {
     else if (!kstricmp(line, "net")) cmd_net();
     else if (!kstricmp(line, "vol") || !kstricmp(line, "volume")) cmd_vol(arg);
     else if (!kstricmp(line, "snddiag")) cmd_snddiag();
+    else if (!kstricmp(line, "time") || !kstricmp(line, "clock")) cmd_time();
     else if (!kstricmp(line, "rescan")) {
         con_puts("\n Reading CD drives...");
         int n = cd_scan();
