@@ -45,7 +45,19 @@ void fs_drop_tag(int tag) {
 /* Built-in files first, then USB sticks / extra disks, then downloads. */
 int fs_count(void) { return count_of(valid(plat_fs())) + count_of(valid(plat_usbfs())) + ndl; }
 
+static int fs_get_raw(int i, kfile *f);
+
+/* ByroTT: once it is installed, its setup (byr.swf) is hidden and cannot be
+ * opened; it comes back when ByroTT is uninstalled. */
 int fs_get(int i, kfile *f) {
+    if (!fs_get_raw(i, f)) return 0;
+#ifdef BYROTT
+    if (byr_installed() && !kstricmp(f->name, "byr.swf")) return 0;
+#endif
+    return 1;
+}
+
+static int fs_get_raw(int i, kfile *f) {
     const u8 *a = valid(plat_fs()), *u = valid(plat_usbfs());
     int nb = count_of(a), nu = count_of(u);
     int usb = 0;

@@ -3114,10 +3114,27 @@ const char *byr_launch_arg(void);
 int byr_installed(void);
 void byr_run(const char *name, const char *back, u32 color);
 void byr_power(int what);
-const char *byr_install(void);
+const char *byr_install(int disk);
+int byr_disk_count(void);
+u32 byr_disk_mb(int i);
+const char *byr_disk_model(int i);
 const char *byr_uninstall(void);
 static u8 *net_buf;
-static val nf_bInstall(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(byr_install()); }
+static val nf_bInstall(ctx *c, val th, val *a, int n) { (void)c; (void)th; return vstr(byr_install(n > 0 ? to_i32(a[0]) : -1)); }
+/* [{mb, model}] : the hard disks Setup can install on */
+static val nf_bDisks(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th; (void)a; (void)n;
+    obj *arr = new_array();
+    if (!arr) return vobj(NULL);
+    for (int i = 0; i < byr_disk_count(); i++) {
+        obj *o = new_obj(obj_proto);
+        if (!o) break;
+        set_own(o, "mb", vnum((double)byr_disk_mb(i)));
+        set_own(o, "model", vstr(astrdup(byr_disk_model(i))));
+        arr_set(arr, i, vobj(o));
+    }
+    return vobj(arr);
+}
 static val nf_bUninstall(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vstr(byr_uninstall()); }
 static val nf_bInstalled(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; return vbool(byr_installed()); }
 static val nf_bRestart(ctx *c, val th, val *a, int n) { (void)c; (void)th; (void)a; (void)n; byr_power(1); return vundef(); }
@@ -3163,10 +3180,19 @@ static val nf_bCopy(ctx *c, val th, val *a, int n) {
     const u8 *d = file_bytes(as_tostring(ARG(0)), &size);
     return vbool(d && docs_write(as_tostring(ARG(1)), d, size));
 }
+/* cursorColor(fill, outline): the pointer of SWFs played in a window */
+extern u32 cursor_fill, cursor_line;
+static val nf_bCursor(ctx *c, val th, val *a, int n) {
+    (void)c; (void)th;
+    cursor_fill = 0xFF000000u | ((u32)to_i32(ARG(0)) & 0xFFFFFF);
+    cursor_line = 0xFF000000u | (n > 1 ? (u32)to_i32(a[1]) & 0xFFFFFF : 0xFFFFFF);
+    return vundef();
+}
 static void byrott_api(obj *f) {
     net_buf = NULL;
     set_hidden(f, "edition", vstr("ByroTT"));
     def_native(f, "install", nf_bInstall);
+    def_native(f, "disks", nf_bDisks);
     def_native(f, "uninstall", nf_bUninstall);
     def_native(f, "isInstalled", nf_bInstalled);
     def_native(f, "restart", nf_bRestart);
@@ -3177,6 +3203,7 @@ static void byrott_api(obj *f) {
     def_native(f, "netConnect", nf_bNet);
     def_native(f, "httpGet", nf_bHttp);
     def_native(f, "copyFile", nf_bCopy);
+    def_native(f, "cursorColor", nf_bCursor);
 }
 #endif
 

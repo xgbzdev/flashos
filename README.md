@@ -198,31 +198,33 @@ It is a ray caster written in ActionScript that draws into a 256 × 160
 BitmapData with `BitmapData.draw`, shown 4× for a chunky pixel look. Font:
 Press Start 2P (SIL Open Font License).
 
-## ByroTT
+## ByroTT 1.0
 
-**`ByroTT.iso`** holds ByroTT, a desktop made in Flash, plus a special
-edition of FlashOS that starts it.
+**`ByroTT.iso`** holds ByroTT 1.0 (stable), a desktop made in Flash with a
+2000s look, plus a special edition of FlashOS that starts it.
 
 1. Start the computer from `ByroTT.iso`. It looks like the normal FlashOS.
-2. Type `Byr.swf`. The ByroTT Setup wizard installs the ByroTT edition on
-   the hard disk, after you confirm on a screen drawn by FlashOS itself.
-3. Take the CD out and restart. The FlashOS logo flashes quickly, then
-   ByroTT starts. Hold **F8** while it starts to get the FlashOS terminal.
+2. Type `Byr.swf`. ByroTT Setup (pixel font, cyan panel) asks for the drive
+   (2 GB or more); press Space to go on, Esc to go back. FlashOS itself
+   asks you to confirm with Y.
+3. Restart. The FlashOS logo flashes quickly, then ByroTT starts, even if
+   the ByroTT CD is still in the drive. There is no way to the FlashOS
+   terminal while ByroTT is installed, and `Byr.swf` is hidden.
 
-ByroTT has a desktop with Windows 2000-style icons, a taskbar and a Start
-menu. Apps open full screen on pure black, with a grey X to close them.
-Everything has square corners. The logo is a drawing, kept as pictures in
-`apps/byrott/art/`; the wallpapers show it in colour variants.
+ByroTT has 2000-style icons, grey 3D buttons, a taskbar and a Start menu.
+An app opens in a window on black: a title bar in the window colour, then a
+grey body. SWFs from the Terminal or Files play in the same kind of window.
+The logo and its wallpapers are drawn by `tools/byrott_art.py`.
 
-* **Terminal** plays SWFs in a big black window with an X, one at a time.
+* **Terminal** (white text) plays SWFs, one at a time.
 * **Files** covers the hard disk, CD, USB and system files.
 * **Internet** is an http-only web browser; its start page links FrogFind.
-* **Notepad**, a picture and video viewer, and **Maze 3D** are included.
-* **Settings** changes the wallpaper, the colour (cyan, blue, red, green)
-  and the cursor.
-* **Settings > Uninstall** (or `uninstall` in the Terminal) writes the
-  original FlashOS, which is stored inside ByroTT, back to the disk.
-  Saved files are kept.
+* **Notepad**, a picture and video viewer, and **Catch** (a ball game) are included.
+* **Settings** changes the wallpaper, the window colour (cyan, blue, red,
+  green) and the cursor colour.
+* **Settings > Uninstall** writes the original FlashOS, which is stored
+  inside ByroTT, back to the disk. Saved files are kept, and `Byr.swf`
+  comes back.
 
 The normal FlashOS ISO is unchanged. The edition is the same source built
 with `-DBYROTT` (`make build/ByroTT.iso`). Pictures in `private/wallpapers/`

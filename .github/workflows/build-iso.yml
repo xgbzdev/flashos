@@ -30,7 +30,7 @@ jobs:
           cp build/apps/FlashNotepad.swf .
           mkdir -p mazecd && cp build/apps/Maze.swf mazecd/
           genisoimage -quiet -V "Maze" -J -r -o Maze.iso mazecd
-          cp build/apps/Maze.swf .
+          cp build/apps/Maze.swf . && cp build/apps/Catch.swf .
           make build/ByroTT.iso
           cp build/ByroTT.iso .
 
@@ -67,10 +67,10 @@ jobs:
           # Maze 3D from its CD
           python3 tools/qemu_test.py build/FlashOS.iso screenshots maze Maze.iso
           # ByroTT: install from its CD, start it from the disk, uninstall, FlashOS again
-          truncate -s 64M byr.img
+          truncate -s 3G byr.img
           python3 tools/qemu_test.py ByroTT.iso screenshots byr_setup byr.img
           python3 tools/qemu_test.py ByroTT.iso screenshots byr_boot byr.img
-          python3 tools/qemu_test.py ByroTT.iso screenshots byr_after byr.img
+          python3 tools/qemu_test.py ByroTT.iso screenshots byr_cd byr.img
           ls -l screenshots
 
       - name: Upload screenshots
@@ -91,11 +91,11 @@ jobs:
             cat audio-report.txt || true
             echo '```'
           } > notes.md
-          ASSETS="build/FlashOS.iso Flash-notepad.iso FlashNotepad.swf Maze.iso Maze.swf screenshots/maze_*.png ByroTT.iso screenshots/byr_*.png screenshots/notepad_*.png screenshots/notepad2_*.png screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png screenshots/hdd_03_no_install.png screenshots/net_01_net.png screenshots/net_02_get.png screenshots/net_03_web.png screenshots/net_04_play.png screenshots/net8139_02_get.png screenshots/gamecd_01_ls.png screenshots/audio_01_vol.png screenshots/audio_01b_snddiag.png screenshots/audio_01c_snddiag2.png screenshots/audio_02_features.png screenshots/gamecd_02_play.png"
+          ASSETS="build/FlashOS.iso Flash-notepad.iso FlashNotepad.swf Maze.iso Maze.swf Catch.swf screenshots/maze_*.png ByroTT.iso screenshots/byr_*.png screenshots/notepad_*.png screenshots/notepad2_*.png screenshots/cd_02_ready.png screenshots/cd_05_flashlogo.png screenshots/usb_02_ready.png screenshots/cd_09_history.png screenshots/cd_10_catch.png screenshots/cd_12_after_click.png screenshots/install_02_ls.png screenshots/install_02b_mem.png screenshots/install_03_usb_game.png screenshots/install_05_installed.png screenshots/hdd_01_ready.png screenshots/hdd_02_ls.png screenshots/hdd_03_no_install.png screenshots/net_01_net.png screenshots/net_02_get.png screenshots/net_03_web.png screenshots/net_04_play.png screenshots/net8139_02_get.png screenshots/gamecd_01_ls.png screenshots/audio_01_vol.png screenshots/audio_01b_snddiag.png screenshots/audio_01c_snddiag2.png screenshots/audio_02_features.png screenshots/gamecd_02_play.png"
           # every build is its own release, marked Latest; download links:
           #   https://github.com/<owner>/<repo>/releases/latest/download/<file>
           TAG="build-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" $ASSETS --title "FlashOS (build ${GITHUB_RUN_NUMBER})" --notes-file notes.md --latest
+          gh release create "$TAG" $ASSETS --title "FlashOS + ByroTT 1.0 (build ${GITHUB_RUN_NUMBER})" --notes-file notes.md --latest
           # tidy up: the old "latest" release and builds older than the last 3 (GitHub may refuse; that is fine)
           gh release delete latest --yes --cleanup-tag || true
           for t in $(gh release list --limit 50 --json tagName -q '.[].tagName' | grep '^build-' | sort -t- -k2 -n -r | tail -n +4); do

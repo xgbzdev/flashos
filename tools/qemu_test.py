@@ -29,9 +29,9 @@ elif mode == "install":   # CD + blank IDE disk + FAT USB stick
 elif mode == "audio":    # boot CD + test CD, AC'97 recorded to a WAV file
     media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3",
              "-boot", "d", "-audiodev", f"wav,id=snd0,path={extra[1]}", "-device", "AC97,audiodev=snd0"]
-elif mode == "byr_setup":   # ByroTT CD + blank disk
+elif mode in ("byr_setup", "byr_cd"):   # ByroTT CD + a disk
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-drive", f"file={iso},media=cdrom,if=ide,index=2", "-boot", "d"]
-elif mode in ("byr_boot", "byr_after"):   # the hard disk only
+elif mode == "byr_boot":   # the hard disk only
     media = ["-drive", f"file={extra[0]},format=raw,if=ide,index=0", "-boot", "c"]
 elif mode == "maze":     # boot CD + the Maze CD
     media = ["-drive", f"file={iso},media=cdrom,if=ide,index=2", "-drive", f"file={extra[0]},media=cdrom,if=ide,index=3", "-boot", "d"]
@@ -187,55 +187,53 @@ if mode == "byr_setup":
     type_text("byr.swf\n")
     time.sleep(6)
     shot("02_setup")
-    cmd("sendkey ret")
+    cmd("sendkey spc")
     time.sleep(1.5)
-    shot("03_setup2")
-    cmd("sendkey ret")
+    shot("03_drive")
+    cmd("sendkey spc")
+    time.sleep(1.5)
+    shot("04_ready")
+    cmd("sendkey spc")
     time.sleep(2)
-    shot("04_confirm")
+    shot("05_confirm")
     cmd("sendkey y")
-    time.sleep(8)
-    shot("05_done")
+    time.sleep(10)
+    shot("06_done")
     cmd("quit")
     qemu.wait(timeout=10)
     sys.exit(0)
 
 if mode == "byr_boot":
-    time.sleep(4)
+    time.sleep(2.5)
     shot("01_logo")
     time.sleep(10)
     shot("02_desktop")
     cmd("sendkey ctrl-t")
     time.sleep(2)
-    type_text("maze\n")
+    type_text("help\n")
+    time.sleep(1)
+    shot("03_terminal")
+    type_text("catch\n")
     time.sleep(8)
-    shot("03_maze_window")
+    shot("04_catch_window")
+    cmd("sendkey spc")
+    time.sleep(1)
+    cmd("sendkey left 1500")
+    time.sleep(4)
+    shot("05_catch_play")
     cmd("sendkey f12")
     time.sleep(6)
-    shot("04_back")
-    type_text("color red\n")
+    shot("06_back")
+    type_text("ls\n")
     time.sleep(1.5)
-    type_text("uninstall\n")
-    time.sleep(1.5)
-    shot("05_uninstall")
-    cmd("sendkey ret")
-    time.sleep(2)
-    shot("06_confirm")
-    cmd("sendkey y")
-    time.sleep(6)
-    shot("07_done")
+    shot("07_ls_no_setup")
     cmd("quit")
     qemu.wait(timeout=10)
     sys.exit(0)
 
-if mode == "byr_after":
-    time.sleep(12)
-    shot("01_flashos_again")
-    type_text("ls\n")
-    time.sleep(1.5)
-    type_text("install\n")
-    time.sleep(1.5)
-    shot("02_ls")
+if mode == "byr_cd":    # ByroTT on the disk and the ByroTT CD still inside
+    time.sleep(14)
+    shot("01_starts_byrott")
     cmd("quit")
     qemu.wait(timeout=10)
     sys.exit(0)

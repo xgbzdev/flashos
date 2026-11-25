@@ -68,7 +68,10 @@ build/apps/FlashNotepad.swf: apps/notepad/notepad.as tools/asc.py apps/notepad/C
 build/apps/Maze.swf: apps/maze/maze.as tools/asc.py apps/maze/PressStart2P-Regular.ttf | build
 	mkdir -p build/apps
 	$(PY) tools/asc.py $< $@ --font apps/maze/PressStart2P-Regular.ttf "Press Start 2P" --title "Maze 3D" --fps 30
-apps: build/apps/FlashNotepad.swf build/apps/Maze.swf
+build/apps/Catch.swf: apps/catch/catch.as tools/asc.py apps/byrott/PressStart2P-Regular.ttf | build
+	mkdir -p build/apps
+	$(PY) tools/asc.py $< $@ --font apps/byrott/PressStart2P-Regular.ttf "Press Start 2P" --title "Catch" --size 800x600 --fps 30 --bg 204090
+apps: build/apps/FlashNotepad.swf build/apps/Maze.swf build/apps/Catch.swf
 .PHONY: apps
 
 build/flashfs.bin: tools/mkfs.py swf/bounce.swf swf/flashlogo.swf $(FILES) | build
@@ -100,16 +103,16 @@ $(BYRDIR)/flashkrn.elf: build/entry.o $(BYROBJ) kernel/linker.ld
 	@if nm $@ | grep -q ' U '; then nm $@ | grep ' U '; echo "undefined symbols"; exit 1; fi
 $(BYRDIR)/flashkrn.bin: $(BYRDIR)/flashkrn.elf
 	objcopy -O binary $< $@
-$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/DejaVuSansCondensed.ttf | build
+$(BYRDIR)/byr.swf: apps/byrott/setup.as tools/asc.py apps/byrott/PressStart2P-Regular.ttf | build
 	mkdir -p $(BYRDIR)
-	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT Setup" --fps 30
+	$(PY) tools/asc.py $< $@ --font apps/byrott/PressStart2P-Regular.ttf "Press Start 2P" --title "ByroTT Setup" --fps 30
 $(BYRDIR)/byrott.swf: apps/byrott/byrott.as tools/asc.py apps/byrott/DejaVuSansCondensed.ttf | build
 	mkdir -p $(BYRDIR)
 	$(PY) tools/asc.py $< $@ $(BYRFONTS) --title "ByroTT" --fps 30
-$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Maze.swf $(BYRWALL) $(BYRART)
+$(BYRDIR)/flashfs.bin: tools/mkfs.py $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf build/FlashOS.iso build/apps/Catch.swf $(BYRWALL) $(BYRART)
 	cp build/FlashOS.iso $(BYRDIR)/flashos.iso
-	cp build/apps/Maze.swf $(BYRDIR)/maze.swf
-	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/maze.swf $(BYRWALL) $(BYRART)
+	cp build/apps/Catch.swf $(BYRDIR)/catch.swf
+	$(PY) tools/mkfs.py $@ $(BYRDIR)/byr.swf $(BYRDIR)/byrott.swf $(BYRDIR)/flashos.iso $(BYRDIR)/catch.swf $(BYRWALL) $(BYRART)
 build/ByroTT.iso: build/mbr.bin build/loader.bin build/stage2.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin tools/mkiso.py
 	$(PY) tools/mkiso.py build/mbr.bin build/loader.bin $(BYRDIR)/flashkrn.bin $(BYRDIR)/flashfs.bin build/stage2.bin $@ \
 		--label BYROTT --file BYR.SWF=$(BYRDIR)/byr.swf

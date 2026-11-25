@@ -732,6 +732,7 @@ static const char *HAND[] = {
     "    WWWWWWWW", 0};
 #define CUR_SCALE 2
 static int cur_x = -1000, cur_y = -1000, cur_w, cur_h;
+u32 cursor_fill = 0xFF000000u, cursor_line = 0xFFFFFFFFu;   /* ByroTT sets its cursor colours */
 
 void erase_cursor(void) {
     if (cur_x > -1000) video_present(cur_x, cur_y, cur_w, cur_h);
@@ -750,7 +751,7 @@ void draw_cursor(int x, int y, int hand) {
             char p = img[r][c];
             if (p == ' ') continue;
             video_fb_rect(x + c * CUR_SCALE, y + r * CUR_SCALE, CUR_SCALE, CUR_SCALE,
-                          p == 'B' ? 0xFF000000u : 0xFFFFFFFFu);
+                          p == 'B' ? cursor_fill : cursor_line);
         }
     cur_x = x; cur_y = y; cur_w = w * CUR_SCALE; cur_h = h * CUR_SCALE;
 }

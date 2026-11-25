@@ -4,14 +4,19 @@
 
 var W = 1024, H = 768, BAR = 48;
 var FONT = "DejaVu Sans Condensed", FONT_B = "DejaVu Sans Condensed Bold", MONO = "DejaVu Sans Mono";
-// dark, square look: apps open full screen on black
-var INK = 0xE6E6E6, GREY = 0x9A9A9A, WHITE = 0xFFFFFF, LIGHT = 0x161616;
-var PANEL = 0x202020, EDGE = 0x4A4A4A, FIELD = 0x141414;
-var COLORS = {cyan: [0x1EC8DC, 0x0E9FB0, 0x0B3A40], blue: [0x2F6FE0, 0x1D4FB0, 0x14264A],
-              red: [0xE0443C, 0xB02A24, 0x4A1614], green: [0x2FAE5B, 0x1E8443, 0x123A20]};
+// square look: an app opens in a window on black: a bar in the window
+// colour, a thin black gap, then a light grey body
+// the classic 2000s grey ("button face") with 3D edges
+var INK = 0x000000, GREY = 0x4A4A4A, WHITE = 0xFFFFFF, LIGHT = 0xC4C0B8;
+var PANEL = 0xD4D0C8, EDGE = 0x808080, FIELD = 0xFFFFFF, BODY = 0xD4D0C8, SHADOW = 0x404040;
+var COLORS = {cyan: [0x1EC8DC, 0x0E9FB0, 0xC4F0F5], blue: [0x2F6FE0, 0x1D4FB0, 0xCADAF8],
+              red: [0xE0443C, 0xB02A24, 0xF8CFCC], green: [0x2FAE5B, 0x1E8443, 0xC8ECD3]};
 var COLOR_NAMES = ["cyan", "blue", "red", "green"];
-var CURSORS = ["arrow", "dark", "big", "bird", "cross", "classic"];
-var cfg = {wallpaper: "pyramids.jpg", color: "cyan", cursor: "arrow"};
+// coloured arrow cursors: fill, outline
+var CURSORS = ["cyan", "blue", "red", "green", "yellow", "pink", "white", "black"];
+var CURSOR_COLS = {cyan: [0x1EC8DC, 0x000000], blue: [0x2F6FE0, 0xFFFFFF], red: [0xE0443C, 0xFFFFFF], green: [0x2FAE5B, 0x000000],
+                   yellow: [0xFFD21E, 0x000000], pink: [0xFF6EC7, 0x000000], white: [0xFFFFFF, 0x000000], black: [0x000000, 0xFFFFFF]};
+var cfg = {wallpaper: "pyramids.jpg", color: "cyan", cursor: "cyan"};
 var DEFAULT_WALL = "pyramids.jpg";
 var C1, C2, C3;            // window colour: main, dark, pale
 
@@ -25,12 +30,15 @@ function loadCfg() {
         }
     }
     if (!COLORS[cfg.color]) cfg.color = "cyan";
+    if (!CURSOR_COLS[cfg.cursor]) cfg.cursor = "cyan";
     applyColor();
 }
 function saveCfg() {
     FlashOS.write("byrott.cfg", "wallpaper=" + cfg.wallpaper + "\ncolor=" + cfg.color + "\ncursor=" + cfg.cursor + "\n");
 }
 function applyColor() { var c = COLORS[cfg.color]; C1 = c[0]; C2 = c[1]; C3 = c[2]; }
+// text on the window colour: black on cyan, white on the darker colours
+function onC1() { return cfg.color == "cyan" ? 0x000000 : WHITE; }
 
 var depthN = 1000;
 function nd() { depthN++; return depthN; }
@@ -59,7 +67,7 @@ function input(mc, name, depth, x, y, w, h, size, font) {
     t.embedFonts = true;
     t.type = "input";
     t.border = true;
-    t.borderColor = 0x5A5A5A;
+    t.borderColor = EDGE;
     t.background = true;
     t.backgroundColor = FIELD;
     t.setNewTextFormat(fmt(size, INK, false, "left", font));
@@ -79,6 +87,27 @@ function box(mc, x, y, w, h, fill, line, lw, r) {
     rrect(mc, x, y, w, h, 0);          // square corners
     if (fill >= 0) mc.endFill();
     mc.lineStyle();
+}
+// 3D edges, 2000 style: raised (buttons, panels) or sunken (fields, pressed)
+function bevel(mc, x, y, w, h, raised) {
+    var a = raised ? WHITE : EDGE, b = raised ? SHADOW : WHITE, a2 = raised ? 0xEAE8E4 : SHADOW, b2 = raised ? EDGE : 0xEAE8E4;
+    box(mc, x, y, w, 1, a, 0, 0, 0); box(mc, x, y, 1, h, a, 0, 0, 0);
+    box(mc, x, y + h - 1, w, 1, b, 0, 0, 0); box(mc, x + w - 1, y, 1, h, b, 0, 0, 0);
+    box(mc, x + 1, y + 1, w - 2, 1, a2, 0, 0, 0); box(mc, x + 1, y + 1, 1, h - 2, a2, 0, 0, 0);
+    box(mc, x + 1, y + h - 2, w - 2, 1, b2, 0, 0, 0); box(mc, x + w - 2, y + 1, 1, h - 2, b2, 0, 0, 0);
+}
+// a title bar: the window colour fading to its dark shade, like 2000
+function titleBar(mc, x, y, w, h) {
+    var n = 24;
+    for (var i = 0; i < n; i++) {
+        var t = i / (n - 1), c = 0, sh = 16;
+        for (var k = 0; k < 3; k++) {
+            var a = (C1 >> sh) & 255, b = (C2 >> sh) & 255;
+            c |= Math.round(a + (b - a) * t) << sh;
+            sh -= 8;
+        }
+        box(mc, x + Math.floor(i * w / n), y, Math.ceil(w / n) + 1, h, c, 0, 0, 0);
+    }
 }
 function circle(mc, cx, cy, r, fill) {
     mc.beginFill(fill, 100);
@@ -121,17 +150,21 @@ function button(parent, name, depth, x, y, w, h, text, onClick, style, size) {
     b.bg = b.createEmptyMovieClip("bg", 1);
     b.icon = b.createEmptyMovieClip("icon", 2);
     if (!size) size = 16;
-    b.lab = label(b, "lab", 3, 0, (h - size * 1.3) / 2, w, size * 1.5, text, size, WHITE, true, style == 2 ? "left" : "center");
+    var tc = style == 3 ? WHITE : (style == 1 ? onC1() : INK);
+    b.lab = label(b, "lab", 3, 0, (h - size * 1.3) / 2, w, size * 1.5, text, size, tc, true, style == 2 ? "left" : "center");
     if (style == 2) b.lab._x = 12;
     b.paint = function (state) {
         var g = this.bg;
         g.clear();
-        if (this.style == 1) box(g, 0, 0, this.w, this.h, state > 0 ? C2 : C1, 0, 0, 0);
-        else if (this.style == 3) box(g, 0, 0, this.w, this.h, state > 0 ? 0x8A8A8A : 0x5A5A5A, 0, 0, 0);   // grey X
+        if (this.style == 1) { box(g, 0, 0, this.w, this.h, state == 2 ? C2 : C1, 0, 0, 0); bevel(g, 0, 0, this.w, this.h, state != 2); }
+        else if (this.style == 3) { box(g, 0, 0, this.w, this.h, state > 0 ? 0x9A2A24 : 0x7A1E1A, 0, 0, 0); bevel(g, 0, 0, this.w, this.h, state != 2); }
         else if (this.style == 2) {
-            box(g, 0, 0, this.w, this.h, this.on ? C1 : 0x2C2C2C, 0, 0, 0);
+            box(g, 0, 0, this.w, this.h, this.on ? C3 : 0xCFCFCF, this.on ? C1 : 0, this.on ? 2 : 0, 0);
             g._alpha = (state > 0 || this.on) ? 100 : 0;
-        } else box(g, 0, 0, this.w, this.h, state == 2 ? 0x4A4A4A : (state == 1 ? 0x3A3A3A : 0x2C2C2C), state > 0 ? C1 : 0x5A5A5A, 1, 0);
+        } else {
+            box(g, 0, 0, this.w, this.h, state == 1 ? 0xE0DDD6 : PANEL, 0, 0, 0);
+            bevel(g, 0, 0, this.w, this.h, state != 2);
+        }
     };
     b.setOn = function (v) { this.on = v; this.paint(0); };
     b.paint(0);
@@ -171,10 +204,11 @@ function ask(title, msg, labels, done, danger) {
     var pw = 560, ph = 250;
     p._x = (W - pw) / 2; p._y = (H - ph) / 2 - 30;
     var g = p.createEmptyMovieClip("g", 1);
-    box(g, 0, 0, pw, ph, PANEL, EDGE, 2, 0);
-    box(g, 1, 1, pw - 2, 40, C1, 0, 0, 0);
-    logo(p, "lg", 5, 10, 6, 28, WHITE);
-    label(p, "t", 2, 48, 7, pw - 70, 30, title, 18, WHITE, true);
+    box(g, 0, 0, pw, ph, PANEL, 0, 0, 0);
+    bevel(g, 0, 0, pw, ph, true);
+    titleBar(g, 3, 3, pw - 6, 36);
+    logo(p, "lg", 5, 10, 6, 28, onC1());
+    label(p, "t", 2, 48, 7, pw - 70, 30, title, 18, onC1(), true);
     var m = label(p, "m", 3, 24, 60, pw - 48, 110, msg, 17, INK, false);
     m.multiline = true;
     m.wordWrap = true;
@@ -193,13 +227,16 @@ function ask(title, msg, labels, done, danger) {
 }
 function message(title, msg) { ask(title, msg, ["OK"], null); }
 
-// ---------------------------------------------------------------- apps open full screen
-// One app at a time, on pure black, with a grey X. The desktop and the
-// taskbar come back when it is closed.
+// ---------------------------------------------------------------- app windows
+// One app at a time, in a window on pure black: a bar in the window colour
+// with the title and an X, a thin black gap, then the body (light grey, or
+// black for the Terminal and the Viewer). The desktop and the taskbar come
+// back when it is closed.
 var wins = {};          // the open app, by id (at most one)
 var winOrder = [];
 var winDepth = 10;
 var curApp = null;
+var WBAR = 40, WGAP = 6, WPAD = 10;
 
 function focusWin(w) {}
 function makeWindow(id, title, ww, hh, dark, onClose) {
@@ -208,6 +245,8 @@ function makeWindow(id, title, ww, hh, dark, onClose) {
     closeMenu();
     var w = winLayer.createEmptyMovieClip("w_" + id, ++winDepth);
     w.id = id; w.w = ww; w.h = hh; w.title = title; w.onCloseFn = onClose;
+    var ow = ww + WPAD * 2, oh = WBAR + WGAP + hh + WPAD * 2;
+    var wx = Math.round((W - ow) / 2), wy = Math.max(0, Math.round((H - oh) / 2));
     w.frame = w.createEmptyMovieClip("frame", 1);
     box(w.frame, 0, 0, W, H, 0x000000, 0, 0, 0);
     w.frame.onPress = function () {
@@ -215,15 +254,27 @@ function makeWindow(id, title, ww, hh, dark, onClose) {
         if (f == null || f.indexOf("w_" + w.id) < 0) Selection.setFocus(w.focusField ? w.focusField : null);
     };
     w.frame.useHandCursor = false;
-    logo(w, "lg", 2, 14, 12, 28, 0x8A8A8A);
-    w.titleTxt = label(w, "tt", 4, 52, 14, 800, 30, title, 18, 0xA0A0A0, true);
+    w.barClip = w.createEmptyMovieClip("bar", 2);
+    w.bodyBg = w.createEmptyMovieClip("bodybg", 3);
+    box(w.bodyBg, wx, wy + WBAR + WGAP, ow, hh + WPAD * 2, dark ? 0x000000 : BODY, 0, 0, 0);
+    bevel(w.bodyBg, wx, wy + WBAR + WGAP, ow, hh + WPAD * 2, !dark);
+    w.lg = logo(w, "lg", 4, wx + 8, wy + 6, 28, onC1());
+    w.titleTxt = label(w, "tt", 5, wx + 44, wy + 8, ow - 110, 28, title, 18, onC1(), true);
     w.body = w.createEmptyMovieClip("body", 10);
-    w.body._x = Math.round((W - ww) / 2);
-    w.body._y = 56 + Math.max(0, Math.round((H - 56 - hh) / 2));
-    w.paintBar = function () {};
-    var x = button(w, "x", 20, W - 58, 10, 46, 38, "", function () { closeWindow(w); }, 3, 14);
-    x.icon.lineStyle(3, WHITE, 100);
-    x.icon.moveTo(15, 11); x.icon.lineTo(31, 27); x.icon.moveTo(31, 11); x.icon.lineTo(15, 27);
+    w.body._x = wx + WPAD;
+    w.body._y = wy + WBAR + WGAP + WPAD;
+    w.paintBar = function () {
+        this.barClip.clear();
+        titleBar(this.barClip, wx, wy, ow, WBAR);
+        if (this.lg) new Color(this.lg).setRGB(onC1());
+        this.titleTxt.textColor = onC1();
+        this.xb.icon.clear();
+        this.xb.icon.lineStyle(3, INK, 100);
+        this.xb.icon.moveTo(11, 8); this.xb.icon.lineTo(25, 22); this.xb.icon.moveTo(25, 8); this.xb.icon.lineTo(11, 22);
+    };
+    var x = button(w, "x", 20, wx + ow - 42, wy + 5, 36, 30, "", function () { closeWindow(w); }, 0, 14);
+    w.xb = x;
+    w.paintBar();
     wins = {};
     wins[id] = w;
     winOrder = [w];
@@ -272,7 +323,7 @@ function systemWallpapers() {
     return out;
 }
 
-var APPS = [["term", "Terminal"], ["files", "Files"], ["web", "Internet"], ["notepad", "Notepad"], ["maze", "Maze 3D"], ["settings", "Settings"]];
+var APPS = [["term", "Terminal"], ["files", "Files"], ["web", "Internet"], ["notepad", "Notepad"], ["catch", "Catch"], ["settings", "Settings"]];
 function launch(id) {
     closeMenu();
     if (id == "term") openTerminal("");
@@ -280,7 +331,7 @@ function launch(id) {
     else if (id == "web") openWeb();
     else if (id == "notepad") openNotepad(null);
     else if (id == "settings") openSettings("wallpaper");
-    else if (id == "maze") runSWF("maze.swf", "");
+    else if (id == "catch") runSWF("catch.swf", "");
 }
 
 function buildIcons() {
@@ -313,8 +364,11 @@ var startBtn, clockTxt, dateTxt;
 function paintTaskbar() {
     taskbar._y = H - BAR;
     tbBg.clear();
-    box(tbBg, 0, 0, W, BAR, 0x101010, 0, 0, 0);
-    box(tbBg, 0, 0, W, 2, C1, 0, 0, 0);
+    box(tbBg, 0, 0, W, BAR, PANEL, 0, 0, 0);
+    box(tbBg, 0, 1, W, 1, WHITE, 0, 0, 0);
+    // the clock sits in a sunken tray
+    box(tbBg, W - 172, 6, 166, BAR - 12, PANEL, 0, 0, 0);
+    bevel(tbBg, W - 172, 6, 166, BAR - 12, false);
     if (!startBtn) {
         startBtn = taskbar.createEmptyMovieClip("start", 3);
         startBtn._x = 6; startBtn._y = 7;
@@ -322,11 +376,14 @@ function paintTaskbar() {
         logo(startBtn, "lg", 2, 6, 3, 30, WHITE);
         label(startBtn, "t", 3, 42, 5, 90, 28, "ByroTT", 18, WHITE, true);
         startBtn.onRelease = function () { if (menuOpen) closeMenu(); else openStart(); };
-        clockTxt = label(taskbar, "clock", 6, W - 110, 4, 100, 22, "", 17, WHITE, true, "right");
-        dateTxt = label(taskbar, "date", 7, W - 160, 24, 150, 20, "", 12, GREY, false, "right");
+        clockTxt = label(taskbar, "clock", 6, W - 110, 8, 98, 22, "", 15, INK, true, "right");
+        dateTxt = label(taskbar, "date", 7, W - 168, 25, 156, 18, "", 11, GREY, false, "right");
     }
     startBtn.g.clear();
-    box(startBtn.g, 0, 0, 132, 36, C1, 0, 0, 0);
+    box(startBtn.g, 0, 0, 132, 36, PANEL, 0, 0, 0);
+    bevel(startBtn.g, 0, 0, 132, 36, !menuOpen);
+    startBtn.t.textColor = INK;
+    new Color(startBtn.lg).setRGB(C2);
 }
 function updateTasks() {}
 function two(n) { return n < 10 ? "0" + n : "" + n; }
@@ -349,21 +406,24 @@ function closeMenu() {
     menuLayer.panel.removeMovieClip();
     menuLayer.catcher.removeMovieClip();
     menuOpen = false;
+    paintTaskbar();
 }
 function openStart() {
     menuOpen = true;
+    paintTaskbar();
     var c = menuLayer.createEmptyMovieClip("catcher", 1);
     box(c, 0, 0, W, H - BAR, 0xFFFFFF, 0, 0, 0);
     c._alpha = 0;
     c.onPress = function () { closeMenu(); };
     c.useHandCursor = false;
     var p = menuLayer.createEmptyMovieClip("panel", 2);
-    var pw = 300, ph = 444;
+    var pw = 300, ph = 404;
     p._x = 0; p._y = H - BAR - ph;
     var g = p.createEmptyMovieClip("g", 1);
-    box(g, 0, 0, pw, ph, PANEL, EDGE, 2, 0);
-    box(g, 1, 1, 52, ph - 2, C1, 0, 0, 0);          // the side band, 2000 style
-    logo(p, "lg", 2, 4, ph - 52, 44, WHITE);
+    box(g, 0, 0, pw, ph, PANEL, 0, 0, 0);
+    bevel(g, 0, 0, pw, ph, true);
+    titleBar(g, 3, 3, 50, ph - 6);                    // the side band, 2000 style
+    logo(p, "lg", 2, 4, ph - 52, 44, onC1());
     var y = 10;
     for (var i = 0; i < APPS.length; i++) {
         var b = button(p, "a" + i, 10 + i, 58, y, pw - 66, 46, APPS[i][1], null, 2, 17);
@@ -375,45 +435,30 @@ function openStart() {
     }
     var sep = p.createEmptyMovieClip("sep", 30);
     box(sep, 64, y + 4, pw - 78, 1, EDGE, 0, 0, 0);
+    box(sep, 64, y + 5, pw - 78, 1, WHITE, 0, 0, 0);
     y += 12;
-    button(p, "ft", 31, 58, y, pw - 66, 34, "FlashOS terminal", function () { closeMenu(); FlashOS.terminal(); }, 2, 15);
-    button(p, "rs", 32, 58, y + 40, 114, 36, "Restart", function () { closeMenu(); FlashOS.restart(); }, 0, 15);
-    button(p, "sd", 33, 178, y + 40, 114, 36, "Shut down", function () { closeMenu(); FlashOS.shutdown(); }, 0, 15);
+    button(p, "rs", 32, 58, y, 114, 36, "Restart", function () { closeMenu(); FlashOS.restart(); }, 0, 15);
+    button(p, "sd", 33, 178, y, 114, 36, "Shut down", function () { closeMenu(); FlashOS.shutdown(); }, 0, 15);
 }
 
 // ---------------------------------------------------------------- cursor
 var cursorGfx = cursorClip.createEmptyMovieClip("g", 1);
 function drawCursor(kind, g) {
     g.clear();
-    if (kind == "arrow" || kind == "dark" || kind == "big") {
-        var s = kind == "big" ? 1.6 : 1;
-        var fill = kind == "dark" ? 0x000000 : WHITE, line = kind == "dark" ? WHITE : 0x000000;
-        g.lineStyle(1.5, line, 100);
-        g.beginFill(fill, 100);
-        g.moveTo(0, 0); g.lineTo(0, 20 * s); g.lineTo(5 * s, 15 * s); g.lineTo(9 * s, 23 * s); g.lineTo(12 * s, 22 * s);
-        g.lineTo(8 * s, 14 * s); g.lineTo(14 * s, 14 * s); g.lineTo(0, 0);
-        g.endFill();
-        g.lineStyle();
-    } else if (kind == "bird") {
-        g.beginFill(C1, 100); g.lineStyle(1, 0x000000, 100);
-        g.moveTo(0, 0); g.lineTo(18, 7); g.lineTo(9, 9); g.lineTo(7, 18); g.lineTo(0, 0);
-        g.endFill(); g.lineStyle();
-        circle(g, 13, 13, 6, C1);
-        circle(g, 15, 11, 1.6, WHITE);
-        g.beginFill(0xFFB020, 100); g.moveTo(18, 14); g.lineTo(23, 16); g.lineTo(17, 17); g.endFill();
-    } else if (kind == "cross") {
-        g.lineStyle(4, 0x000000, 100);
-        g.moveTo(-11, 0); g.lineTo(11, 0); g.moveTo(0, -11); g.lineTo(0, 11);
-        g.lineStyle(2, WHITE, 100);
-        g.moveTo(-10, 0); g.lineTo(10, 0); g.moveTo(0, -10); g.lineTo(0, 10);
-        g.lineStyle();
-    }
+    var c = CURSOR_COLS[kind] ? CURSOR_COLS[kind] : CURSOR_COLS.cyan;
+    g.lineStyle(1.5, c[1], 100);
+    g.beginFill(c[0], 100);
+    g.moveTo(0, 0); g.lineTo(0, 20); g.lineTo(5, 15); g.lineTo(9, 23); g.lineTo(12, 22);
+    g.lineTo(8, 14); g.lineTo(14, 14); g.lineTo(0, 0);
+    g.endFill();
+    g.lineStyle();
 }
 function applyCursor() {
-    if (cfg.cursor == "classic") { cursorClip._visible = false; Mouse.show(); return; }
     Mouse.hide();
     cursorClip._visible = true;
     drawCursor(cfg.cursor, cursorGfx);
+    var c = CURSOR_COLS[cfg.cursor] ? CURSOR_COLS[cfg.cursor] : CURSOR_COLS.cyan;
+    if (FlashOS.cursorColor) FlashOS.cursorColor(c[0], c[1]);   // the pointer of SWFs played in a window
 }
 var mouseL = {};
 mouseL.onMouseMove = function () { cursorClip._x = _root._xmouse; cursorClip._y = _root._ymouse; };
@@ -426,7 +471,6 @@ function runSWF(name, back) {
 }
 
 // ================================================================ TERMINAL
-var LOGO = [" ___ _         _    ___  ___ ", "| __| |__ _ __| |_ / _ \\/ __|", "| _|| / _` (_-< ' \\ (_) \\__ \\", "|_| |_\\__,_/__/_||_\\___/|___/"];
 var termLines = [], termHist = [], termHi = 0, termOut, termIn;
 function tprint(s) {
     var parts = s.split("\n");
@@ -435,25 +479,21 @@ function tprint(s) {
     if (termOut) { termOut.text = termLines.join("\n"); termOut.scroll = termOut.maxscroll; }
 }
 function openTerminal(msg) {
-    var w = makeWindow("term", "Terminal", 1000, 700, true, function () { termOut = null; termIn = null; });
+    var w = makeWindow("term", "Terminal", 940, 620, true, function () { termOut = null; termIn = null; });
     if (!w) return;
     var b = w.body;
-    termOut = label(b, "out", 1, 0, 0, 1000, 640, "", 15, 0xFF3030, false, "left", MONO);
+    termOut = label(b, "out", 1, 0, 0, 940, 570, "", 15, 0xFFFFFF, false, "left", MONO);
     termOut.multiline = true;
     termOut.wordWrap = true;
-    label(b, "pr", 2, 0, 662, 30, 26, ">", 17, 0xFF3030, true, "left", MONO);
-    termIn = b.createTextField("in", 3, 22, 660, 976, 28);
+    label(b, "pr", 2, 0, 588, 30, 26, ">", 17, 0xFFFFFF, true, "left", MONO);
+    termIn = b.createTextField("in", 3, 22, 586, 916, 28);
     termIn = b["in"];
     termIn.embedFonts = true;
     termIn.type = "input";
-    termIn.setNewTextFormat(fmt(16, 0xFF3030, false, "left", MONO));
+    termIn.setNewTextFormat(fmt(16, 0xFFFFFF, false, "left", MONO));
     termIn.text = "";
     termIn.maxChars = 120;
     w.focusField = termIn;
-    if (termLines.length == 0) {
-        tprint(LOGO.join("\n"));
-        tprint("Welcome to the ByroTT Terminal. Type HELP for the commands.\n");
-    }
     if (msg != "") tprint(msg);
     termOut.text = termLines.join("\n");
     termOut.scroll = termOut.maxscroll;
@@ -470,18 +510,15 @@ function termCommand(line) {
     var sp = line.indexOf(" ");
     var cmd = (sp < 0 ? line : line.substr(0, sp)).toLowerCase(), arg = sp < 0 ? "" : line.substr(sp + 1);
     if (cmd == "") return;
-    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, SETTINGS   open an app\n  COLOR <cyan|blue|red|green>   window colour\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  UNINSTALL     remove ByroTT, put FlashOS back\n  RESTART, SHUTDOWN\n  CLS           clear the screen\n  EXIT          close the terminal");
+    if (cmd == "help") tprint("  LS            list files\n  RUN <file>    play a SWF in a window (or just type its name)\n  OPEN <file>   open a file in a ByroTT app\n  FILES, INTERNET, NOTEPAD, SETTINGS   open an app\n  COLOR <cyan|blue|red|green>   window colour\n  MEM           free memory\n  DATE          date and time\n  ABOUT         about ByroTT\n  CLS           clear the screen\n  EXIT          close the terminal");
     else if (cmd == "files") openFiles();
     else if (cmd == "internet" || cmd == "web") openWeb();
     else if (cmd == "notepad") openNotepad(null);
     else if (cmd == "settings") openSettings("wallpaper");
-    else if (cmd == "uninstall") uninstallNow();
-    else if (cmd == "restart" || cmd == "reboot") FlashOS.restart();
-    else if (cmd == "shutdown") FlashOS.shutdown();
     else if (cmd == "color" || cmd == "colour") {
         var cn = arg.toLowerCase();
         if (!COLORS[cn]) tprint("  Colours: cyan, blue, red, green");
-        else { cfg.color = cn; applyColor(); saveCfg(); paintTaskbar(); buildIcons(); applyCursor(); for (var key in wins) wins[key].paintBar(true); tprint("  Window colour: " + cn); }
+        else { cfg.color = cn; applyColor(); saveCfg(); paintTaskbar(); buildIcons(); applyCursor(); for (var key in wins) wins[key].paintBar(); tprint("  Window colour: " + cn); }
     }
     else if (cmd == "ls" || cmd == "dir") {
         var all = FlashOS.files("");
@@ -520,18 +557,20 @@ var noteName = "", noteTF = null, noteDirty = false;
 function openNotepad(file) {
     var w = wins["notepad"];
     if (!w) {
-        w = makeWindow("notepad", "Notepad", 1000, 700, false, function () { noteTF = null; });
+        w = makeWindow("notepad", "Notepad", 940, 620, false, function () { noteTF = null; });
         var b = w.body;
         button(b, "new", 1, 0, 8, 90, 34, "New", function () { noteTF.text = ""; noteName = ""; noteDirty = false; noteTitle(); }, 0, 15);
         button(b, "save", 2, 96, 8, 90, 34, "Save", function () { noteSave(false); }, 1, 15);
         button(b, "saveas", 3, 192, 8, 110, 34, "Save as...", function () { noteSave(true); }, 0, 15);
-        b.createTextField("txt", 4, 0, 52, 1000, 640);
+        b.createTextField("txt", 4, 0, 52, 940, 568);
         noteTF = b.txt;
         noteTF.embedFonts = true;
         noteTF.type = "input";
         noteTF.multiline = true;
         noteTF.wordWrap = true;
         noteTF.border = true;
+        noteTF.background = true;
+        noteTF.backgroundColor = FIELD;
         noteTF.borderColor = EDGE;
         noteTF.setNewTextFormat(fmt(18, INK, false));
         noteTF.text = "";
@@ -706,7 +745,7 @@ function filesDraw() {
         row.bg.clear();
         if (i < filesList.length) {
             var f = filesList[i];
-            box(row.bg, 0, 0, 668, 42, i == filesSel ? C3 : (r % 2 ? 0x0C0C0C : 0x141414), i == filesSel ? C1 : 0, i == filesSel ? 2 : 0, 0);
+            box(row.bg, 0, 0, 668, 42, i == filesSel ? C3 : (r % 2 ? 0xEDEDED : 0xF7F7F7), i == filesSel ? C1 : 0, i == filesSel ? 2 : 0, 0);
             icon(row, "ic", 2, 10, 5, fileKind(f.name), true);
             row.n.text = f.name;
             row.s.text = kb(f.size);
@@ -800,29 +839,29 @@ function settingsPage(pg) {
                 paintTaskbar();
                 buildIcons();
                 applyCursor();
-                for (var key in wins) paintFrameColors(wins[key]);
+                for (var key in wins) wins[key].paintBar();
                 settingsPage("color");
             };
         }
     } else if (pg == "cursor") {
         label(c, "t", 1, 0, 0, 580, 30, "Cursor", 22, INK, true);
-        var cnames = {arrow: "White arrow", dark: "Black arrow", big: "Big arrow", bird: "Bird", cross: "Crosshair", classic: "FlashOS pixel"};
+        var cnames = {cyan: "Cyan", blue: "Blue", red: "Red", green: "Green", yellow: "Yellow", pink: "Pink", white: "White", black: "Black"};
         for (k = 0; k < CURSORS.length; k++) {
             var cb = c.createEmptyMovieClip("k" + k, 10 + k);
-            cb._x = (k % 3) * 194; cb._y = 50 + Math.floor(k / 3) * 160;
+            cb._x = (k % 4) * 146; cb._y = 50 + Math.floor(k / 4) * 150;
             var on = CURSORS[k] == cfg.cursor;
-            box(cb, 0, 0, 180, 140, on ? C3 : PANEL, on ? C1 : EDGE, on ? 3 : 1, 0);
+            box(cb, 0, 0, 134, 130, on ? C3 : 0xF2F2F2, on ? C1 : EDGE, on ? 3 : 1, 0);
             var pv = cb.createEmptyMovieClip("pv", 1);
-            pv._x = 78; pv._y = 30;
-            if (CURSORS[k] == "classic") { box(pv, 0, 0, 3, 24, 0x000000, 0, 0, 0); box(pv, 3, 3, 3, 18, 0x000000, 0, 0, 0); box(pv, 6, 6, 3, 12, 0x000000, 0, 0, 0); box(pv, 9, 9, 3, 6, 0x000000, 0, 0, 0); }
-            else { if (CURSORS[k] == "cross") { pv._x = 90; pv._y = 50; } drawCursor(CURSORS[k], pv); }
-            label(cb, "n", 2, 0, 100, 180, 26, cnames[CURSORS[k]], 16, INK, true, "center");
+            pv._x = 50; pv._y = 22; pv._xscale = pv._yscale = 200;
+            drawCursor(CURSORS[k], pv);
+            label(cb, "n", 2, 0, 96, 134, 26, cnames[CURSORS[k]], 16, INK, true, "center");
             cb.ck = CURSORS[k];
             cb.onRelease = function () { cfg.cursor = this.ck; applyCursor(); saveCfg(); settingsPage("cursor"); };
         }
     } else if (pg == "about") {
         logo(c, "logo", 1, 0, 0, 120, C1);
         label(c, "t", 2, 130, 30, 440, 50, "ByroTT 1.0", 34, INK, true);
+        label(c, "st", 4, 132, 80, 440, 30, "Stable version", 16, GREY, false);
         var info = label(c, "i", 3, 0, 140, 560, 320, "", 16, INK, false);
         info.multiline = true;
         info.wordWrap = true;
@@ -830,8 +869,7 @@ function settingsPage(pg) {
             "System: FlashOS " + FlashOS.version + ", ByroTT edition\n" +
             "Memory free for apps: " + Math.round(FlashOS.memoryKB() / 1024) + " MB\n" +
             "Files: " + (FlashOS.storage() == "disk" ? "saved on the hard disk (" + Math.round(FlashOS.freeKB() / 1024) + " MB free)" : "kept in memory until restart") + "\n\n" +
-            "Fonts: DejaVu Sans Condensed, DejaVu Sans Mono.\n" +
-            "Hold F8 while the computer starts to get the FlashOS terminal.";
+            "Fonts: DejaVu Sans Condensed, DejaVu Sans Mono.";
     } else {
         label(c, "t", 1, 0, 0, 580, 30, "Uninstall ByroTT", 22, INK, true);
         var u = label(c, "i", 2, 0, 50, 560, 200, "", 17, INK, false);
@@ -869,7 +907,7 @@ var START_PAGE = "<title>ByroTT start page</title><h1>Welcome to the Internet</h
     "<li><a href=\"http://info.cern.ch/\">info.cern.ch</a> - the first web site ever</li>" +
     "<li><a href=\"http://example.com/\">example.com</a></li></ul>" +
     "<p>Tip: click a link, or type an address at the top and press Enter.</p>";
-var STYLE = [[16, INK, FONT], [27, WHITE, FONT_B], [21, WHITE, FONT_B], [16, WHITE, FONT_B], [16, 0x7DB4FF, FONT], [14, INK, MONO], [13, GREY, FONT], [18, WHITE, FONT_B]];
+var STYLE = [[16, INK, FONT], [27, INK, FONT_B], [21, INK, FONT_B], [16, INK, FONT_B], [16, 0x1A4FC0, FONT], [14, INK, MONO], [13, GREY, FONT], [18, INK, FONT_B]];
 var charW = [], lineHt = [], measured = false;
 var webItems, webLines, webScroll = 0, webUrl = "", webHist = [], webTitle = "", webForms = [];
 var webPage = null, webBar = null, webThumb = null, webStatus = null, webUrlF = null, netOk = false;
@@ -1090,7 +1128,7 @@ function webMakeLine(L, idx) {
                 var lk = mc.createEmptyMovieClip("a" + s, s + 1);
                 lk._x = g.x;
                 var t = label(lk, "t", 1, -2, L.h - lineHt[g.st] - 2, g.w * 1.04 + 16, lineHt[g.st] + 4, g.text, st[0], st[1], false, "left", st[2]);
-                box(lk, 0, L.h - 4, g.w, 1, 0x7DB4FF, 0, 0, 0);
+                box(lk, 0, L.h - 4, g.w, 1, 0x1A4FC0, 0, 0, 0);
                 lk.href = g.href;
                 lk.onRelease = function () { webGo(webResolve(this.href)); };
             } else label(mc, "t" + s, s + 1, g.x - 2, L.h - lineHt[g.st] - 2, g.w * 1.04 + 16, lineHt[g.st] + 4, g.text, st[0], st[1], false, "left", st[2]);
@@ -1199,7 +1237,7 @@ function openWeb() {
     button(b, "go", 6, WEB_W - 76, 8, 86, 34, "Go", function () { webGo(webUrlF.text); }, 1, 15);
     var bar = b.createEmptyMovieClip("bar", 7);
     bar._x = WEB_W + 2; bar._y = 56;
-    box(bar, 0, 0, 12, WEB_VIEW, 0x242424, 0, 0, 0);
+    box(bar, 0, 0, 12, WEB_VIEW, 0xC8C8C8, 0, 0, 0);
     webThumb = bar.createEmptyMovieClip("th", 1);
     bar.onPress = function () { webScroll += (this._ymouse > webThumb._y ? 1 : -1) * (WEB_VIEW - 40); webRender(); };
     webStatus = label(b, "st", 8, 12, 542, 600, 24, "", 13, GREY, false);

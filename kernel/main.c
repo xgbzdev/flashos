@@ -75,7 +75,27 @@ static int resolve(const char *arg, kfile *f) {
 }
 
 /* ---------- commands ---------- */
+#ifdef BYROTT
+/* started from the ByroTT CD, but ByroTT is already on the hard disk:
+ * start ByroTT anyway (flags bit 1 marks a ByroTT install) */
+static int disk_byrott;
+static void find_disk_byrott(void) {
+#ifndef HOSTED
+    static ata_disk disks[4];
+    static u8 sec[1024];
+    int n = ata_scan(disks, 4);
+    for (int i = 0; i < n; i++) {
+        if (!ata_read(&disks[i], 0, sec, 2)) continue;
+        const u8 *hd = sec + 512;
+        if (sec[510] != 0x55 || sec[511] != 0xAA || (hd[8] | (hd[9] << 8)) != 512) continue;
+        if ((hd[38] & 3) == 3) { disk_byrott = 1; return; }
+    }
+#endif
+}
+static int installed(void) { return (plat_bootinfo()->flags & 1) || disk_byrott; }
+#else
 static int installed(void) { return plat_bootinfo()->flags & 1; }
+#endif
 
 static void cmd_help(void) {
     con_puts("\n FlashOS commands:\n"
@@ -103,7 +123,7 @@ static void cmd_ls(void) {
     if (!n) { con_puts(" No files.\n"); return; }
     for (int i = 0; i < n; i++) {
         kfile f;
-        fs_get(i, &f);
+        if (!fs_get(i, &f)) continue;
         char num[12];
         kutoa(i + 1, num);
         con_puts(i + 1 < 10 ? "  " : " ");
@@ -236,6 +256,9 @@ static int sys_install(ata_disk *d, progress_fn pr) {
     if (!sys) return 0;
     memcpy(sys, SYS_COPY, 64 * 512);
     sys[512 + 38] |= 1;
+#ifdef BYROTT
+    sys[512 + 38] |= 2;            /* this is ByroTT (a ByroTT CD will start it) */
+#endif
     u32 done = 0, total = 64 + k_cnt + s2_cnt + fs_cnt;
     int ok = write_part(d, 0, sys, 64, &done, total, pr) &&
              write_part(d, k_lba, KRN_COPY, k_cnt, &done, total, pr) &&
@@ -555,7 +578,7 @@ static void read_line(char *buf, int max) {
 #ifdef BYROTT
 /* ================================================================ ByroTT edition
  * This FlashOS starts ByroTT (a Flash desktop, byrott.swf) by itself once it
- * is installed. It shows the logo quickly; holding F8 goes to the terminal.
+ * is installed. It shows the logo quickly, then ByroTT; there is no terminal.
  * ByroTT's setup (byr.swf) and ByroTT may install this system, put the
  * original FlashOS back (flashos.iso, kept in the built-in files), restart
  * and play another SWF in a window. */
@@ -638,18 +661,39 @@ static ata_disk *pick_disk(u32 need) {
     return NULL;
 }
 
-/* "ok", "cancelled" or an error */
-const char *byr_install(void) {
+/* the hard disks, for ByroTT Setup's drive list: size in MB, 0 = none */
+static ata_disk setup_disks[4];
+static int setup_ndisks = -1;
+int byr_disk_count(void) {
 #ifdef HOSTED
+    return 0;
+#else
+    if (setup_ndisks < 0) setup_ndisks = ata_scan(setup_disks, 4);
+    return setup_ndisks;
+#endif
+}
+u32 byr_disk_mb(int i) { return i >= 0 && i < byr_disk_count() ? setup_disks[i].sectors / 2048 : 0; }
+const char *byr_disk_model(int i) { return i >= 0 && i < byr_disk_count() ? setup_disks[i].model : ""; }
+
+/* "ok", "cancelled" or an error; disk: index in the drive list, -1 = pick one */
+const char *byr_install(int disk) {
+#ifdef HOSTED
+    (void)disk;
     return "no hard disk in the simulator";
 #else
     const u8 *hd = SYS_COPY + 512;
     if (SYS_COPY[510] != 0x55 || SYS_COPY[511] != 0xAA || (hd[8] | (hd[9] << 8)) != 512)
         return "start the computer from the ByroTT CD to install";
-    ata_disk *d = pick_disk(le32(hd + 18) + le32(hd + 22));
+    u32 need = le32(hd + 18) + le32(hd + 22);
+    ata_disk *d;
+    if (disk >= 0) {
+        if (disk >= byr_disk_count()) return "that drive is not there";
+        d = &setup_disks[disk];
+        if (d->sectors < need) return "that drive is too small";
+    } else d = pick_disk(need);
     if (!d) return "no IDE hard disk found";
     if (!sys_confirm("ByroTT Setup wants to install ByroTT on the hard disk.",
-                     "The computer will start ByroTT instead of the FlashOS terminal.",
+                     "The computer will start ByroTT from now on.",
                      "Your saved documents are kept.",
                      "You can uninstall it later in ByroTT's Settings.")) return "cancelled";
     sys_box("Installing ByroTT...", "Please wait.", "", "");
@@ -700,7 +744,8 @@ static void play_windowed(const char *name) {
     kfile f;
     const u8 *data = NULL;
     u32 size = 0;
-    if (fs_find(name, &f)) { data = f.data; size = f.size; }
+    if (installed() && !kstricmp(name, "byr.swf")) data = NULL;
+    else if (fs_find(name, &f)) { data = f.data; size = f.size; }
     else data = docs_read(name, &size, run_alloc);
     if (!data || size < 8 || !((data[0] == 'F' || data[0] == 'C' || data[0] == 'Z') && data[1] == 'W' && data[2] == 'S')) {
         kstrcpy(launch_arg + kstrlen(launch_arg), "|not a SWF file", 64);
@@ -718,7 +763,7 @@ static void play_windowed(const char *name) {
     }
 }
 
-/* ByroTT until it asks for the terminal; F12 in ByroTT starts it again */
+/* ByroTT, for ever; if it is closed (F12) it starts again */
 static void byrott_loop(void) {
     launch_arg[0] = 0;
     for (;;) {
@@ -729,29 +774,25 @@ static void byrott_loop(void) {
         const char *err = NULL;
         swf_play(f.data, f.size, &err);
         byr_after_play();
-        if (power_req == 3) return;
         if (run_req[0]) { play_windowed(run_req); continue; }
         launch_arg[0] = 0;
     }
 }
 
-/* the logo, quickly; returns 1 when F8 is held */
-static int fast_logo(void) {
+/* the FlashOS logo, quickly, with no welcome line; ByroTT follows */
+static void fast_logo(void) {
     con_defer(1);
     con_clear();
-    header_text();
+    for (int i = 0; i < 4; i++) { con_puts(LOGO[i]); con_putc('\n'); }
     con_defer(0);
-    int bottom = con_row_y(5), f8 = 0;
+    int bottom = con_row_y(5);
     for (int y = 0; y < bottom; y += 6) {
         video_present(0, y, scr_w, 6);
         plat_sleep(2);
-        plat_poll();
-        if (plat_kdown(119)) f8 = 1;
     }
     video_present(0, 0, scr_w, scr_h);
-    u32 t = plat_ms();
-    while (plat_ms() - t < 500) { plat_poll(); if (plat_kdown(119)) f8 = 1; }
-    return f8;
+    plat_sleep(500);
+    plat_flush_input();
 }
 #endif
 
@@ -765,8 +806,10 @@ void kmain(void) {
     cd_scan(); /* game CDs / ISO images in the CD drives */
     con_init();
 #ifdef BYROTT
+    if (!(plat_bootinfo()->flags & 1)) find_disk_byrott();
     if (installed()) {
-        if (!fast_logo()) byrott_loop();
+        fast_logo();
+        byrott_loop();            /* only returns if byrott.swf is missing */
         redraw_header();
     } else {
         boot_animation();

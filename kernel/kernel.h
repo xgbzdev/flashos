@@ -63,6 +63,7 @@ typedef struct {
 
 void plat_init(void);
 bootinfo_t *plat_bootinfo(void);
+int byr_installed(void);   /* ByroTT edition: ByroTT is on the hard disk */
 const u8 *plat_font(void);
 u8 *plat_fb(void);
 const u8 *plat_fs(void);
