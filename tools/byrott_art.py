@@ -10,7 +10,7 @@ The logo is drawn as vectors (smooth Bezier feathers over a ring) with a
 4x supersample, so it is sharp at 320 px and still readable at 24 px.
 """
 import math, sys, os
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # ---- the design, on a 1000 x 1000 grid ----------------------------------
 RING_C = (548, 512)
@@ -112,20 +112,24 @@ def render_vector(size, stroke, simple=False):
     return out
 
 
-SKETCH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "apps", "byrott", "art", "logo_sketch.png")
+SRC4 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "apps", "byrott", "art", "logo_v4_src.png")
 
 
-def render(size, stroke, simple=False):
-    """the sketch, white on transparent; stroke: line width in sketch pixels"""
-    sk = Image.open(SKETCH).convert("L")
-    n = max(3, int(stroke) | 1)
-    m = sk.filter(ImageFilter.MaxFilter(n)) if n > 3 else sk
-    m = m.filter(ImageFilter.GaussianBlur(n / 5.0))
-    m = m.point(lambda v: 0 if v < 50 else min(255, int((v - 50) * 2.4)))
-    m = m.resize((size, size), Image.LANCZOS)
-    out = Image.new("RGBA", (size, size), (255, 255, 255, 0))
-    out.putalpha(m)
-    return out
+def render(size, grow=0, simple=False):
+    """the 4.0 logo: a white outline (and ring) around a black bird, on
+    transparent; grow thickens the white lines (in source pixels) for small
+    sizes. Tint it by multiplying: the white takes the colour, black stays."""
+    src = Image.open(SRC4)
+    white, black = src.split()
+    if grow > 1:
+        white = white.filter(ImageFilter.MaxFilter(int(grow) | 1))
+    # the JPEG left dark specks around the lines: remove them (opening), then
+    # grow the fill a little so no gap is left where it meets the outline
+    black = black.filter(ImageFilter.MinFilter(5)).filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MaxFilter(5))
+    alpha = ImageChops.lighter(white, black)
+    rgb = Image.merge("RGB", (white, white, white))          # white where the outline is, black elsewhere
+    out = Image.merge("RGBA", (*rgb.split(), alpha))
+    return out.resize((size, size), Image.LANCZOS)
 
 
 def wallpaper(path, col, glow_col, bg_top, bg_bot, W=1024, H=768):
@@ -141,27 +145,30 @@ def wallpaper(path, col, glow_col, bg_top, bg_bot, W=1024, H=768):
     ImageDraw.Draw(halo).ellipse((W / 2 - 330, H / 2 - 340, W / 2 + 330, H / 2 + 320), fill=90)
     halo = halo.filter(ImageFilter.GaussianBlur(120))
     img = Image.composite(Image.new("RGB", (W, H), glow_col), img, halo)
-    lg = render(560, 7)
-    a = lg.getchannel("A")
+    lg = render(560, 5)
+    a = lg.getchannel("R").point(lambda v: v)              # the white lines only
     x0, y0 = (W - 560) // 2, (H - 560) // 2 - 10
     for blur, strength in ((26, 1.0), (9, 0.9)):
         g = Image.new("L", (W, H), 0)
         g.paste(a, (x0, y0))
         g = g.filter(ImageFilter.GaussianBlur(blur)).point(lambda v: min(255, int(v * 2.2 * strength)))
         img = Image.composite(Image.new("RGB", (W, H), glow_col), img, g)
+    full = Image.new("L", (W, H), 0)
+    full.paste(lg.getchannel("A"), (x0, y0))
+    img = Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), img, full)          # the black bird
     core = Image.new("L", (W, H), 0)
     core.paste(a, (x0, y0))
-    img = Image.composite(Image.new("RGB", (W, H), col), img, core)
+    img = Image.composite(Image.new("RGB", (W, H), col), img, core)                 # the lines
     img.save(path, quality=92)
 
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else "apps/byrott"
     art = os.path.join(root, "art")
-    render(784, 5).save(os.path.join(art, "logo_master.png"))
+    render(784).save(os.path.join(art, "logo_master.png"))
     # thicker lines at small sizes, so they stay visible
-    for name, size, stroke in (("big", 320, 7), ("mid", 128, 13), ("small", 40, 31), ("tiny", 24, 45)):
-        render(size, stroke).save(os.path.join(art, "logo_%s.png" % name))
+    for name, size, grow in (("big", 320, 0), ("mid", 128, 9), ("small", 40, 31), ("tiny", 24, 45)):
+        render(size, grow).save(os.path.join(art, "logo_%s.png" % name))
     walls = os.path.join(root, "wallpapers")
     for name, col, glow, top, bot in (
             ("cyan", (230, 255, 255), (30, 200, 220), (2, 18, 24), (0, 4, 8)),

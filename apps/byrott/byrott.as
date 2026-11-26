@@ -129,6 +129,11 @@ function sysBitmap(name) {
     if (bmpCache[name] == undefined) bmpCache[name] = FlashOS.loadBitmap(name);
     return bmpCache[name];
 }
+// the 4.0 logo is a black bird with white lines: colour the lines only
+function logoTint(mc, col) {
+    new Color(mc).setTransform({ra: ((col >> 16) & 255) / 2.55, ga: ((col >> 8) & 255) / 2.55, ba: (col & 255) / 2.55,
+                                aa: 100, rb: 0, gb: 0, bb: 0, ab: 0});
+}
 function logo(parent, name, depth, x, y, size, col) {
     var file = size > 140 ? "logo_big.png" : (size > 44 ? "logo_mid.png" : (size > 30 ? "logo_small.png" : "logo_tiny.png"));
     var b = sysBitmap(file);
@@ -137,7 +142,7 @@ function logo(parent, name, depth, x, y, size, col) {
     if (!b) return mc;
     mc.attachBitmap(b, 1, "auto", true);
     mc._xscale = mc._yscale = size / b.width * 100;
-    if (col != undefined && col != WHITE) new Color(mc).setRGB(col);
+    if (col != undefined && col != WHITE) logoTint(mc, col);
     return mc;
 }
 // icons from the mock-up: icon_<kind>.png (64 px) and icon_<kind>_s.png (32 px)
@@ -3203,8 +3208,8 @@ function saverStart() {
     var vx = 3, vy = 2;
     S.onEnterFrame = function () {
         lg._x += vx; lg._y += vy;
-        if (lg._x < 0 || lg._x > W - 240) { vx = -vx; new Color(lg).setRGB(THEMES[THEME_NAMES[Math.floor(Math.random() * 5)]][1] | 0x404040); }
-        if (lg._y < 0 || lg._y > H - 240) { vy = -vy; new Color(lg).setRGB(THEMES[THEME_NAMES[Math.floor(Math.random() * 5)]][0]); }
+        if (lg._x < 0 || lg._x > W - 240) { vx = -vx; logoTint(lg, THEMES[THEME_NAMES[Math.floor(Math.random() * 5)]][1] | 0x404040); }
+        if (lg._y < 0 || lg._y > H - 240) { vy = -vy; logoTint(lg, THEMES[THEME_NAMES[Math.floor(Math.random() * 5)]][0]); }
     };
     S.onPress = function () { saverOff(); };
     cursorClip._visible = false;

@@ -55,14 +55,14 @@ function logo(p, x, y, size, col) {
     var mc = p.createEmptyMovieClip("lg", 3);
     mc._x = x; mc._y = y;
     if (bm) { mc.attachBitmap(bm, 1, "auto", true); mc._xscale = mc._yscale = size / bm.width * 100; }
-    new Color(mc).setRGB(col);
+    if (col != undefined) new Color(mc).setRGB(col);
     return mc;
 }
 
 // 1. welcome
 function welcome() {
     var p = newPage();
-    logo(p, PX + 50, PY + 46, 128, INK);
+    logo(p, PX + 50, PY + 46, 128);
     label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Welcome to\nByroTT 3.0", 32, INK);
     body(p, PY + 210, "This Setup will install ByroTT on your hard disk.\n\n" +
          "ByroTT is a desktop with a terminal for SWF games, files, the internet, notepad and settings.\n\n" +
@@ -154,7 +154,7 @@ function install() {
 // 4. done
 function done() {
     var p = newPage();
-    logo(p, PX + 50, PY + 46, 128, INK);
+    logo(p, PX + 50, PY + 46, 128);
     label(p, "h", 1, PX + 200, PY + 70, PW - 240, 100, "Done Restart", 32, INK);
     body(p, PY + 230, "ByroTT is installed. The computer will restart and start ByroTT.\n\nYou can leave the CD in the drive.");
     footR.text = "Press Space to Restart";
